@@ -7,6 +7,7 @@ from math import *
 import datetime
 import re
 import random
+import secrets
 import pdb
 from datetime import date, timedelta, datetime
 from num2words import num2words
@@ -86,7 +87,7 @@ class PurchaseOrderInherit(models.Model):
                 if partner.id not in processed_partners and not rfq.rfq_lock_applied:
                     locked_users = []
                     for user in rfq.partner_id.user_ids:
-                        new_password = f"{user.name}_{random.randint(1000, 9999)}"
+                        new_password = secrets.token_urlsafe(24)
                         user.sudo().write({'password': new_password})
                         locked_users.append(user.name)
 
@@ -99,14 +100,14 @@ class PurchaseOrderInherit(models.Model):
                                 user_name=user.name,
                                 vendor_name=partner.name,
                                 rfq_name=rfq.name,
-                                new_password=new_password,
+                                
                             ).send_mail(rfq.id, force_send=True)
 
                         if user.partner_id:
                             user.partner_id.message_post(
                                 body=(
                                     f"🔒 Your password has been changed by the system due to no response on RFQ {rfq.name} "
-                                    f"for over 12 days. New password: {new_password}"
+                                    f"for over 12 days. Please contact the purchase team."
                                 ),
                                 message_type="comment",
                                 subtype_xmlid="mail.mt_note"

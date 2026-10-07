@@ -9,6 +9,7 @@ from num2words import num2words
 from odoo import _, SUPERUSER_ID
 import itertools
 import random
+import secrets
 
 
 class ContactCreation(models.Model):
@@ -28,7 +29,7 @@ class ContactCreation(models.Model):
     user_created = fields.Boolean(string="User Created", default=False, copy=False)
     user_id = fields.Many2one('res.users', string='User', copy=False)
     partner_id = fields.Many2one('res.partner',string='Partner', copy=False)
-    password = fields.Char(string='Password', copy=False, required=True, tracking=True)
+    password = fields.Char(string='Password', copy=False, required=True)
     is_vendor = fields.Boolean(string='Is Supplier')
     is_customer = fields.Boolean(string='Is Customer')
     msme_status = fields.Selection([
@@ -106,7 +107,7 @@ class ContactCreation(models.Model):
         ])
         for record in expired_records:
             suffix = str(random.randint(1000, 9999))
-            new_password = (record.password or "pass") + suffix
+            new_password = secrets.token_urlsafe(24)
             record.password = new_password
             user = self.env['res.users'].sudo().search([('partner_id', '=', record.partner_id.id)], limit=1)
 
