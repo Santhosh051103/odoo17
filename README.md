@@ -1,1 +1,1 @@
-# Ekara_oct2024
+# Odoo 17 custom modules - Ekara
