@@ -394,37 +394,6 @@ class HrEmployeeSmartButton(models.Model):
         ('resigned', 'Resigned'),
         ('na', 'NA')], string="Employment Payroll Status")
 
-    resignation_date=fields.Date(string="Resignation Date")
-
-    @api.onchange('employee_status_payroll')
-    def _onchange_employee_status(self):
-
-        if self.employee_status_payroll == 'resigned':
-
-            self.resignation_date = (
-                fields.Date.today()
-            )
-
-        else:
-
-            self.resignation_date = False
-
-    def write(self, vals):
-
-        if 'employee_status_payroll' in vals:
-
-            if vals['employee_status_payroll'] == 'resigned':
-
-                vals['resignation_date'] = (
-                    fields.Date.today()
-                )
-
-            else:
-
-                vals['resignation_date'] = False
-
-        return super().write(vals)
-
     @api.depends('name', 'work_email')
     def _compute_employee(self):
         for record in self:

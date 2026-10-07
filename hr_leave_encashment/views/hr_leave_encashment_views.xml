@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Form View -->
+    <record id="view_hr_leave_encashment_form" model="ir.ui.view">
+        <field name="name">hr.leave.encashment.form</field>
+        <field name="model">hr.leave.encashment</field>
+        <field name="arch" type="xml">
+            <form string="Leave Encashment Request">
+                <header>
+                    <button name="action_submit" string="Submit" type="object"
+                            class="oe_highlight" invisible="state != 'draft'"/>
+                    <button name="action_manager_approve" string="Manager Approve" type="object"
+                            class="oe_highlight"
+                            invisible="state != 'submitted' or not (is_manager_viewer or is_hr_officer)"/>
+                    <button name="action_manager_refuse" string="Manager Refuse" type="object"
+                            invisible="state != 'submitted' or not (is_manager_viewer or is_hr_officer)"/>
+                    <button name="action_hr_approve" string="HR Approve" type="object"
+                            class="oe_highlight" invisible="state != 'manager_approved'"
+                            groups="hr_holidays.group_hr_holidays_user"/>
+                    <button name="action_hr_refuse" string="HR Refuse" type="object"
+                            invisible="state != 'manager_approved'"
+                            groups="hr_holidays.group_hr_holidays_user"/>
+                    <button name="action_reset_draft" string="Reset to Draft" type="object"
+                            invisible="state not in ('submitted', 'manager_approved', 'refused')"
+                            groups="hr_holidays.group_hr_holidays_user"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="draft,submitted,manager_approved,approved"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="name_seq" readonly="1"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group string="Employee">
+                            <field name="employee_id" readonly="state != 'draft'"/>
+                            <field name="employee_code" string="Employee ID"/>
+                            <field name="work_email" string="Email"/>
+                            <field name="manager_id"/>
+                            <field name="is_manager_viewer" invisible="1"/>
+                            <field name="is_hr_officer" invisible="1"/>
+                            <field name="has_manager" invisible="1"/>
+                        </group>
+                        <group string="Earned Leave Encashment">
+                            <field name="leave_type_id" readonly="1"/>
+                            <field name="available_el" string="Available EL"/>
+                            <field name="is_eligible" widget="boolean_toggle" readonly="1"/>
+                            <field name="days_to_encash" readonly="state != 'draft'"/>
+                        </group>
+                    </group>
+                    <group string="Approval Trail" invisible="state in ('draft', 'submitted')">
+                        <group>
+                            <field name="manager_approved_by" readonly="1"/>
+                            <field name="manager_approved_date" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="hr_approved_by" readonly="1"/>
+                            <field name="hr_approved_date" readonly="1"/>
+                        </group>
+                    </group>
+                    <group string="Leave Balance" invisible="state != 'approved'">
+                        <field name="leave_deducted" readonly="1"/>
+                        <field name="deduction_summary" readonly="1"/>
+                        <field name="deduction_leave_id" readonly="1" invisible="1"/>
+                    </group>
+                    <group string="Payroll" invisible="state != 'approved'">
+                        <field name="payroll_processed" readonly="1"/>
+                        <field name="payslip_input_id" readonly="1"/>
+                    </group>
+                    <group invisible="state not in ('submitted', 'manager_approved', 'refused')">
+                        <field name="refusal_reason" readonly="state == 'refused'"
+                               placeholder="If refusing, enter a reason before clicking Refuse..."/>
+                    </group>
+                    <div class="alert alert-warning" role="alert"
+                         invisible="is_eligible or state != 'draft'">
+                        You are not eligible for leave encashment. A minimum of 21 Earned
+                        Leave days is required. Please contact HR.
+                    </div>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- Tree/List View -->
+    <record id="view_hr_leave_encashment_list" model="ir.ui.view">
+        <field name="name">hr.leave.encashment.list</field>
+        <field name="model">hr.leave.encashment</field>
+        <field name="arch" type="xml">
+            <tree string="Leave Encashment Requests">
+                <field name="name_seq"/>
+                <field name="employee_id"/>
+                <field name="employee_code" string="Employee ID"/>
+                <field name="manager_id"/>
+                <field name="available_el" string="Available EL"/>
+                <field name="days_to_encash" string="Days Requested"/>
+                <field name="leave_deducted" string="Deducted"/>
+                <field name="payroll_processed" string="In Payroll"/>
+                <field name="state" widget="badge"
+                       decoration-success="state == 'approved'"
+                       decoration-danger="state == 'refused'"
+                       decoration-info="state in ('submitted', 'manager_approved')"/>
+            </tree>
+        </field>
+    </record>
+
+    <!-- Search View -->
+    <record id="view_hr_leave_encashment_search" model="ir.ui.view">
+        <field name="name">hr.leave.encashment.search</field>
+        <field name="model">hr.leave.encashment</field>
+        <field name="arch" type="xml">
+            <search string="Search Encashment Requests">
+                <field name="employee_id"/>
+                <field name="name_seq"/>
+                <filter string="My Requests" name="my_requests" domain="[('employee_id.user_id', '=', uid)]"/>
+                <filter string="Awaiting My Approval (Manager)" name="my_team_pending"
+                        domain="[('employee_id.parent_id.user_id', '=', uid), ('state', '=', 'submitted')]"/>
+                <filter string="Draft" name="draft" domain="[('state', '=', 'draft')]"/>
+                <filter string="Submitted (Manager)" name="submitted" domain="[('state', '=', 'submitted')]"/>
+                <filter string="Manager Approved (HR)" name="manager_approved" domain="[('state', '=', 'manager_approved')]"/>
+                <filter string="Approved" name="approved" domain="[('state', '=', 'approved')]"/>
+                <group expand="0" string="Group By">
+                    <filter string="Status" name="group_state" context="{'group_by': 'state'}"/>
+                    <filter string="Employee" name="group_employee" context="{'group_by': 'employee_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- Action -->
+    <record id="action_hr_leave_encashment" model="ir.actions.act_window">
+        <field name="name">Encashment</field>
+        <field name="res_model">hr.leave.encashment</field>
+        <field name="view_mode">tree,form</field>
+        <field name="search_view_id" ref="view_hr_leave_encashment_search"/>
+        <field name="context">{'search_default_my_requests': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smart_action">
+                Submit a request to encash your Earned Leave
+            </p>
+        </field>
+    </record>
+
+    <!-- Top menu button, alongside My Time Off / Approvals etc. -->
+    <menuitem id="menu_hr_leave_encashment"
+              name="Encashment"
+              parent="hr_holidays.menu_hr_holidays_root"
+              action="action_hr_leave_encashment"
+              sequence="16"/>
+
+</odoo>

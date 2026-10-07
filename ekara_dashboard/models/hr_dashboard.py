@@ -431,9 +431,9 @@ class HrDashboard(models.AbstractModel):
 
                     ('employee_status_payroll','=','resigned'),
 
-                    ('resignation_date','>=',month_start),
+                    ('resign_date','>=',month_start),
 
-                    ('resignation_date','<=',month_end)
+                    ('resign_date','<=',month_end)
 
                 ]
 

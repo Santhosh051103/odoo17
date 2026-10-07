@@ -1,0 +1,3 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_fixed_asset_user,fixed.asset user,model_fixed_asset,base.group_user,1,1,1,1
+access_fixed_asset_line_user,fixed.asset.line user,model_fixed_asset_line,base.group_user,1,1,1,1

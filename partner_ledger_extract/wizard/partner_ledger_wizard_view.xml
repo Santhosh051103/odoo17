@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_partner_ledger_wizard_form" model="ir.ui.view">
+        <field name="name">partner.ledger.wizard.form</field>
+        <field name="model">partner.ledger.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Partner Ledger Extract">
+                <group>
+                    <field name="partner_ids" widget="many2many_tags"/>
+                    <field name="date_from"/>
+                    <field name="date_to"/>
+                    <field name="target_move"/>
+                </group>
+                <footer>
+                    <button name="action_print_report" string="Print PDF"
+                            type="object" class="btn-primary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_partner_ledger_wizard" model="ir.actions.act_window">
+        <field name="name">Partner Ledger Extract</field>
+        <field name="res_model">partner.ledger.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+    <menuitem id="menu_partner_ledger_wizard"
+              name="Partner Ledger Extract"
+              parent="account.menu_finance_reports"
+              action="action_partner_ledger_wizard"
+              sequence="50"/>
+
+</odoo>

@@ -10,11 +10,19 @@ class ProjectProject(models.Model):
     validity_start_date = fields.Date(string="Validity Start Date")
     validity_end_date = fields.Date(string="Validity End Date")
     is_document_validity_management = fields.Boolean(string="Is Document Validity Management", default=False)
-    document_reminder = fields.Integer('Reminder')
+    document_reminder = fields.Integer('First Reminder', help="Days before Validity End Date to send the first reminder.")
+    document_reminder2 = fields.Integer('Second Reminder', help="Days before Validity End Date to start the (repeating) second reminder.")
+    document_first_reminder_sent = fields.Boolean(string="First Reminder Sent", default=False, copy=False)
     closed_date = fields.Date(string='Closed Date',readonly=1)
     closed_by = fields.Many2one('res.users',string='Closed By',readonly=1)
     days_left = fields.Integer(string="Days Left", compute="_compute_days_left")
     second_person_name = fields.Many2one('res.partner', string="Second Person Name")
+    company_id = fields.Many2one(
+        'res.company',
+        string="Company",
+        default=lambda self: self.env.company,
+        required=True,
+    )
     status = fields.Selection(
         [
             ('active', 'Active'),
@@ -43,40 +51,11 @@ class ProjectProject(models.Model):
             else:
                 record.days_left = 0
 
-    # @api.model
-    # def _get_view(self, view_id=None, view_type='form', **options):
-    #     arch, view = super()._get_view(view_id, view_type, **options)
-    #     if view_type == 'form':
-    #         for node in arch.xpath("//field"):
-    #             node.set('readonly', "not active")
-    #     return arch, view
-
-    # @api.model
-    # def _get_view(self, view_id=None, view_type='form', **options):
-    #     arch, view = super()._get_view(view_id, view_type, **options)
-    #     print(self.id,'uuuuuuu')
-    #     if view_type == 'form':
-    #         print(self.stage_id.name,'lllllll')
-    #         for node in arch.xpath("//field"):
-    #             node.set('readonly', "stage_id.name == 'Done'")
-    #     return arch, view
-
-    # @api.model
-    # def _get_view(self, view_id=None, view_type='form', **options):
-    #     arch, view = super()._get_view(view_id, view_type, **options)
-    #
-    #     if view_type == 'form':
-    #         for node in arch.xpath("//field"):
-    #             node.set('attrs', "{'readonly': [('stage_id.name', '=', 'Done')]}")
-    #     return arch, view
-
     def document_closed(self):
         self.closed_date = date.today()
         self.closed_by = self.env.user
         self.stage_id = self.env['project.project.stage'].sudo().search([('name','=','Done')])
         self.is_done = True
-        #print(self.stage_id.name,'yyyyyyy')
-        # self.active=False
 
     def _create_default_task_stages(self):
         context = self.env.context
@@ -105,26 +84,23 @@ class ProjectProject(models.Model):
         projects._create_default_task_stages()
         return projects
 
-    # @api.onchange('document_type_id', 'validity_start_date')
-    # def _onchange_document_type(self):
-    #     if not self.document_type_id:
-    #         self.validity_end_date = self.validity_start_date = False
-    #     if self.document_type_id and self.validity_start_date:
-    #         self.validity_end_date = self.validity_start_date + timedelta(
-    #             days=self.document_type_id.default_validity_period)
-
-    @api.onchange('validity_end_date','document_reminder')
+    @api.onchange('validity_end_date','document_reminder','document_reminder2')
     def _onchange_validity_dates(self):
         """
-        Update reminder fields when the date_of_notice or last_date changes.
+        Update First/Second reminder dates when validity end date or either
+        reminder day-count changes. Both are plain "days before
+        Validity End Date" offsets, matching the pattern used for Legal /
+        Statutory Notice reminders and recurring task reminders elsewhere
+        in this system.
         """
         for project in self:
             if project.is_legal_notice or project.is_document_validity_management:
                 if project.validity_end_date:
                     validity_end_date = project.validity_end_date
                     if project.document_reminder:
-                            document_reminder = project.document_reminder
-                            project.first_reminder_date = validity_end_date - timedelta(days=document_reminder)
+                        project.first_reminder_date = validity_end_date - timedelta(days=project.document_reminder)
+                    if project.document_reminder2:
+                        project.second_reminder_date = validity_end_date - timedelta(days=project.document_reminder2)
 
     @api.constrains('validity_start_date', 'validity_end_date')
     def _check_date_order(self):
@@ -136,58 +112,55 @@ class ProjectProject(models.Model):
 
     def send_reminder_document(self):
         today = fields.Date.today()
-        document_first_reminder = self.sudo().search([
+        # First reminder: sent once only, per document.
+        first_due = self.sudo().search([
             ('is_document_validity_management', '=', True),
-            ('document_type_id.default_validity_period', '>', 0),
+            ('first_reminder_date', '!=', False),
             ('first_reminder_date', '<=', today),
-            ('validity_end_date', '>=', today),
+            ('document_first_reminder_sent', '=', False),
+        ])
+        # Second reminder: sent every day the cron runs, until the document
+        # is marked Done - deliberate daily nag, matching the recurring
+        # task reminder pattern.
+        second_due = self.sudo().search([
+            ('is_document_validity_management', '=', True),
+            ('second_reminder_date', '!=', False),
+            ('second_reminder_date', '<=', today),
+            ('is_done', '=', False),
         ])
 
-        projects_to_remind = document_first_reminder.filtered(
-            lambda p: p.first_reminder_date <= today <= p.validity_end_date
-        )
+        if first_due:
+            self._schedule_activities_first_reminder_document(first_due)
+            self._send_first_reminder_email_notifications_document(first_due)
 
-        if projects_to_remind:
-            self._schedule_activities_first_reminder_document()
-            self._send_first_reminder_email_notifications_document(projects_to_remind)
-
-        # document_first_reminder = self.sudo().search([
-        #     ('first_reminder_date', '=', today),('is_document_validity_management','=',True),('document_type_id.default_validity_period','>',0)
-        # ])
-        # if document_first_reminder:
-        #     self._schedule_activities_first_reminder_document()
-        #     self._send_first_reminder_email_notifications_document(document_first_reminder)
+        if second_due:
+            self._send_second_reminder_email_notifications_document(second_due)
 
     def _send_first_reminder_email_notifications_document(self,document_first_reminder):
+        # Recipient is the project creator (create_uid), handled directly
+        # in the template's own email_to field - see mail_template_data.xml.
+        template = self.env.ref('document_validity_management.document_validity_first_reminder_email_template')
         for rec in document_first_reminder:
-            account_manager_group = self.env.ref('account.group_account_manager')
-            emails = [user.email for user in account_manager_group.users if user.email]
-            if emails:
-                template = self.env.ref('document_validity_management.document_validity_first_reminder_email_template')
-                template.write({'email_to': ', '.join(emails)})
-                self.env['mail.template'].browse(template.id).send_mail(rec.id, force_send=True)
+            template.send_mail(rec.id, force_send=True)
+            rec.document_first_reminder_sent = True
 
-    def _schedule_activities_first_reminder_document(self):
+    def _send_second_reminder_email_notifications_document(self,document_second_reminder):
+        # No "sent" flag set here on purpose - this resends daily until
+        # the document is marked Done.
+        template = self.env.ref('document_validity_management.document_validity_second_reminder_email_template')
+        for rec in document_second_reminder:
+            template.send_mail(rec.id, force_send=True)
+
+    def _schedule_activities_first_reminder_document(self, projects):
         today = fields.Date.today()
-        # projects = self.search([
-        #     ('first_reminder_date', '=', today),('is_document_validity_management','=',True),('document_type_id.default_validity_period','>',0)
-        # ])
-        projects = self.search([
-            ('is_document_validity_management', '=', True),
-            ('document_type_id.default_validity_period', '>', 0),
-            ('first_reminder_date', '<=', today),
-            ('validity_end_date', '>=', today),
-        ])
         for project in projects:
-            if project.first_reminder_date and project.first_reminder_date <= today <= project.validity_end_date:
-                project.activity_schedule(
-                    activity_type_id=self.env.ref('mail.mail_activity_data_todo').id,
-                    summary="Reminder: Document Validity Due",
-                    note="The document deadline is approaching. Please take action.",
-                    user_id=project.user_id.id,
-                    # date_deadline=fields.Date.today()
-                    date_deadline=today
-                )
+            project.activity_schedule(
+                activity_type_id=self.env.ref('mail.mail_activity_data_todo').id,
+                summary="Reminder: Document Validity Due",
+                note="The document deadline is approaching. Please take action.",
+                user_id=project.create_uid.id,
+                date_deadline=today
+            )
 
 class ProjectTask(models.Model):
     _inherit = 'project.task'
@@ -220,6 +193,8 @@ class ProjectTask(models.Model):
                 vals['validity_start_date'] = project_id.validity_start_date
             if not vals.get('validity_end_date'):
                 vals['validity_end_date'] = project_id.validity_end_date
+            if not vals.get('company_id'):
+                vals['company_id'] = project_id.company_id.id
         res = super().create(vals)
         return res
 
@@ -275,10 +250,9 @@ class ProjectTask(models.Model):
                                                                   ('project_ids', 'in',task.project_id.id)]).id
             if task.validity_start_date and task.validity_end_date:
                 date_diff = task.validity_end_date - task.validity_start_date
-                
-                # Set new start and end dates
-                new_start_date = task.validity_end_date + timedelta(days=1)  # Start next day after old end date
-                new_end_date = new_start_date + date_diff  # Add the same duration
+
+                new_start_date = task.validity_end_date + timedelta(days=1)
+                new_end_date = new_start_date + date_diff
             self.create({
                 'name': f"{task.name}",
                 'project_id': task.project_id.id,

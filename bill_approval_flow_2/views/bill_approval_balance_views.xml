@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Balance list for approved bills. Register this file under 'data' in
+         __manifest__.py. Uses <tree> for Odoo 17. On Odoo 18+ change <tree> to <list>.
+         If you would rather extend your EXISTING approved-bills list, copy
+         just the <field> lines below into it instead of using this view. -->
+    <record id="bill_approval_view_list_balances" model="ir.ui.view">
+        <field name="name">bill.approval.list.balances</field>
+        <field name="model">bill.approval</field>
+        <field name="arch" type="xml">
+            <tree string="Approved Bills - Balances">
+                <field name="name"/>
+                <field name="supplier_name"/>
+                <field name="taxable_value" string="Taxable Amount" sum="Total"/>
+                <field name="gst" string="GST Amount" sum="Total"/>
+                <field name="total_taxable_paid" string="Paid Taxable" sum="Total"/>
+                <field name="total_gst_paid" string="Paid GST" sum="Total"/>
+                <field name="tds_deducted_actual" string="TDS Deducted" sum="Total"/>
+                <field name="remaining_taxable_to_pay" string="Remaining Taxable" sum="Total"/>
+                <field name="remaining_gst_to_pay" string="Remaining GST" sum="Total"/>
+                <field name="remaining_taxable_value" string="Unbilled Taxable" optional="show"/>
+                <field name="remaining_gst_value" string="Unbilled GST" optional="show"/>
+                <field name="taxable_settled" optional="hide"/>
+                <field name="approver_status" widget="badge" optional="hide"/>
+            </tree>
+        </field>
+    </record>
+</odoo>

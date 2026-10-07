@@ -127,7 +127,14 @@ class AccountMoveInherit(models.Model):
         groups="account.group_account_invoice,account.group_account_readonly",
     )
     budget_id = fields.Many2one('crossovered.budget.lines', 'Budget Code', copy=False, required=0)
-    crossovered_budget = fields.Many2one('crossovered.budget',string='Budget',copy=False,default=lambda self: self.env['crossovered.budget'].sudo().search([('user_type','=','odoo'),('company_id','=',self.env.company.id)]),limit=1)
+    # MIGRATION/FIX NOTE: the previous default here searched for *any*
+    # confirmed budget for the company with no date filtering at all (and
+    # had a stray `limit=1` mistakenly passed as a kwarg to fields.Many2one
+    # instead of to search()), so it could pick an arbitrary/wrong-year
+    # budget. Replaced with a plain field; _onchange_date_update_budget()
+    # below now selects the budget whose date_from/date_to actually covers
+    # this move's Accounting Date.
+    crossovered_budget = fields.Many2one('crossovered.budget', string='Budget', copy=False)
     budget_update = fields.Boolean("Is Budget Updated?",copy=False)
     journal_type = fields.Selection(related='journal_id.type')
     active = fields.Boolean(string="Active",default=True, copy=False)
@@ -152,6 +159,34 @@ class AccountMoveInherit(models.Model):
     advance_payment_ids = fields.Many2many('account.payment',string='Advance Payment')
     utr_number =fields.Char(string='UTR Number')
     is_cheque_details_freeze = fields.Boolean(string='Is Cheque Details Freezed')
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        moves = super().create(vals_list)
+        # The "TDS Entry" button (l10n_in_withholding) creates a separate
+        # withholding journal entry linked back to the original bill via
+        # l10n_in_withholding_ref_move_id. That wizard-created move never
+        # goes through the UI form, so the _onchange_date_update_budget
+        # onchange below never fires for it, leaving Budget blank and
+        # forcing a manual pick. Since a TDS entry is always part of the
+        # same budget as the bill it's withholding against, inherit it
+        # directly from the referenced bill instead of asking.
+        for move in moves:
+            if (move.l10n_in_withholding_ref_move_id
+                    and not move.crossovered_budget
+                    and move.l10n_in_withholding_ref_move_id.crossovered_budget):
+                move.crossovered_budget = move.l10n_in_withholding_ref_move_id.crossovered_budget
+        return moves
+
+    def write(self, vals):
+        res = super().write(vals)
+        if 'l10n_in_withholding_ref_move_id' in vals:
+            for move in self:
+                if (move.l10n_in_withholding_ref_move_id
+                        and not move.crossovered_budget
+                        and move.l10n_in_withholding_ref_move_id.crossovered_budget):
+                    move.crossovered_budget = move.l10n_in_withholding_ref_move_id.crossovered_budget
+        return res
 
     def action_update_utr_number(self):
         for rec in self:
@@ -443,19 +478,64 @@ class AccountMoveInherit(models.Model):
                 'state': 'cancel'
             })
 
+    def _find_budget_for_date(self, accounting_date):
+        """Return the crossovered.budget whose date_from/date_to range
+        covers `accounting_date` for this move's company (e.g. a bill dated
+        in 2024 matches "Budget FY 2024-2025", a bill dated in 2026 matches
+        "Budget FY 2026-2027", etc.) -- whatever fiscal year ranges your
+        budget records are actually configured with."""
+        self.ensure_one()
+        if not accounting_date:
+            return self.env['crossovered.budget']
+        return self.env['crossovered.budget'].sudo().search([
+            ('date_from', '<=', accounting_date),
+            ('date_to', '>=', accounting_date),
+            ('user_type', '=', 'odoo'),
+            ('company_id', '=', self.company_id.id or self.env.company.id),
+            ('state', 'not in', ('draft', 'cancel')),
+        ], limit=1)
+
+    @api.onchange('date', 'company_id')
+    def _onchange_date_update_budget(self):
+        for move in self:
+            if move.company_id.disable_budget_company:
+                continue
+            budget = move._find_budget_for_date(move.date)
+            move.crossovered_budget = budget.id if budget else False
+            if move.date and not budget:
+                return {
+                    'warning': {
+                        'title': _("No Budget Found"),
+                        'message': _(
+                            "No Budget is configured that covers the Accounting Date %s. "
+                            "Please create/confirm a Budget for that period before posting this entry."
+                        ) % format_date(self.env, move.date),
+                    }
+                }
+
     def budget_id_selection_validation(self):
-        for move in self.filtered(lambda l: not l.journal_id.is_opening_balance and not l.statement_line_id):
+        # TDS-NO-BUDGET: TDS entries have no budget and no budget impact.
+        for move in self.filtered(lambda l: not l.journal_id.is_opening_balance and not l.statement_line_id
+                                  and not l.l10n_in_withholding_ref_move_id):
             for line1 in move.invoice_line_ids.filtered(lambda l:l.account_id.is_cash_rounding == False):
                 if not move.company_id.disable_budget_company:
                     if not move.crossovered_budget:
-                        raise UserError('Warning!! Kindly select a Budget.')
+                        if move.date and not move._find_budget_for_date(move.date):
+                            raise UserError(_(
+                                "No Budget is configured for the fiscal year covering the "
+                                "Accounting Date %s. Please create/confirm the relevant Budget "
+                                "(e.g. Budget FY covering that date) before proceeding."
+                            ) % format_date(self.env, move.date))
+                        raise UserError(_('Warning!! Kindly select a Budget.'))
                     if line1.budget_id and not line1.filtered(lambda e: e.analytic_distribution):
                         raise UserError(_("Alert !! Analytic Account not Mapped to %s for Entry -%s")%(
                             line1.account_id.display_name,move.display_name))
 
 
     def budget_code_selection_validation(self):
-        for move in self.filtered(lambda l: not l.journal_id.is_opening_balance):
+        # TDS-NO-BUDGET: TDS entries have no budget and no budget impact.
+        for move in self.filtered(lambda l: not l.journal_id.is_opening_balance
+                                  and not l.l10n_in_withholding_ref_move_id):
             for line1 in move.line_ids.filtered(lambda l:l.account_id.is_cash_rounding == False):
                 if not move.budget_id:
                     raise UserError('Warning!! Kindly select a Budget Code.')

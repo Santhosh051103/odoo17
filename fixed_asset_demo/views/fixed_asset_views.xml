@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_fixed_asset_tree" model="ir.ui.view">
+        <field name="name">fixed.asset.tree</field>
+        <field name="model">fixed.asset</field>
+        <field name="arch" type="xml">
+            <tree>
+                <field name="code"/>
+                <field name="name"/>
+                <field name="category"/>
+                <field name="purchase_date"/>
+                <field name="purchase_value"/>
+                <field name="accumulated_value"/>
+                <field name="book_value"/>
+                <field name="state"/>
+            </tree>
+        </field>
+    </record>
+
+    <record id="action_fixed_asset" model="ir.actions.act_window">
+        <field name="name">Fixed Assets</field>
+        <field name="res_model">fixed.asset</field>
+        <field name="view_mode">tree,form</field>
+    </record>
+
+    <menuitem id="menu_fixed_asset_root" name="Fixed Assets" sequence="90"/>
+    <menuitem id="menu_fixed_asset" name="Asset Register" parent="menu_fixed_asset_root" action="action_fixed_asset"/>
+
+    <record id="view_fixed_asset_form" model="ir.ui.view">
+        <field name="name">fixed.asset.form</field>
+        <field name="model">fixed.asset</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_confirm" string="Confirm" type="object" class="btn-primary" invisible="state != 'draft'"/>
+                    <button name="action_post_due_lines" string="Post Due Depreciation" type="object" invisible="state != 'running'"/>
+                    <button name="action_dispose" string="Dispose" type="object" invisible="state != 'running'"/>
+                    <button name="action_reset_draft" string="Reset to Draft" type="object" invisible="state == 'draft'"/>
+                    <field name="state" widget="statusbar"/>
+                </header>
+                <sheet>
+                    <h1><field name="code" readonly="1"/></h1>
+                    <group>
+                        <group>
+                            <field name="name" readonly="state != 'draft'"/>
+                            <field name="category" readonly="state != 'draft'"/>
+                            <field name="purchase_date" readonly="state != 'draft'"/>
+                            <field name="company_id" groups="base.group_multi_company"/>
+                            <field name="currency_id" invisible="1"/>
+                        </group>
+                        <group>
+                            <field name="purchase_value" readonly="state != 'draft'"/>
+                            <field name="salvage_value" readonly="state != 'draft'"/>
+                            <field name="useful_life_months" readonly="state != 'draft'"/>
+                            <field name="accumulated_value"/>
+                            <field name="book_value"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Depreciation Schedule">
+                            <field name="line_ids" readonly="1">
+                                <tree>
+                                    <field name="date"/>
+                                    <field name="amount"/>
+                                    <field name="posted"/>
+                                </tree>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+</odoo>

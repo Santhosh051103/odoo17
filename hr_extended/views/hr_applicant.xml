@@ -57,13 +57,10 @@
             <field name="model">hr.job</field>
             <field name="inherit_id" ref="hr.view_hr_job_form"/>
             <field name="arch" type="xml">
-                <xpath expr="//div[@name='recruitment_target']" position="after">"
+                <xpath expr="//div[@name='recruitment_target']" position="after">
                     <field name="kra_master" options="{'no_quick_create':True,'no_create': True,}"/>
                 </xpath>
-                <xpath expr="//sheet" position="inside">
-                    <field name="allowed_user_ids" invisible="1"/>
-                </xpath>
-                <xpath expr="//div[@name='recruitment_target']/span" position="replace">
+                <xpath expr="//div[@class='o_row' and @name='recruitment_target']/span" position="replace">
                     <span>New Employees</span>
                 </xpath>
             </field>

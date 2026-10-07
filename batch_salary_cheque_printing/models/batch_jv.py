@@ -67,13 +67,14 @@ class AccountBatchJV(models.Model):
     @api.depends('consolidated_jv')
     def compute_salary_payable_amount(self):
         for rec in self:
-            if rec.consolidated_jv:
-                # print(rec.consolidated_jv.filtered(lambda l:l.line_ids.account_id.name == 'Salary Payable').amount)
-                amount = rec.consolidated_jv.line_ids.filtered(lambda l:l.account_id.name == 'Salary Payable')
-                if amount:
-                    rec.salary_payable_amount = amount.credit if amount.credit else amount.debit
-                else:
-                    rec.salary_payable_amount = 0
+            amount_lines = rec.consolidated_jv.line_ids.filtered(
+                lambda l: l.account_id.name == 'Salary Payable' and l.name != 'Salary on hold'
+            )
+
+            if amount_lines:
+                credit = sum(amount_lines.mapped('credit'))
+                debit = sum(amount_lines.mapped('debit'))
+                rec.salary_payable_amount = credit if credit else debit
             else:
                 rec.salary_payable_amount = 0
 

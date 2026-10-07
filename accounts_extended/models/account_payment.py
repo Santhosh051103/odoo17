@@ -20,21 +20,27 @@ class AccountReimbursementLine(models.Model):
     @api.onchange('tax_id')
     @api.depends('tax_id', 'payment_id.other_charges_lines','payment_id.amount', 'payment_id.payment_base_amount')
     def _compute_other_charge_tax_id(self):
-        if self.tax_id:
-            if self.tax_id.amount_type == 'percent':
-                self.other_charge = round(self.payment_id.payment_base_amount*(self.tax_id.amount/100))
-                tax_repartition_line = self.tax_id.invoice_repartition_line_ids.filtered(
-                    lambda l: l.account_id and not l.repartition_type == 'base'
-                )[:1]
-                if tax_repartition_line:
-                    self.account_id = tax_repartition_line.account_id
+        for rec in self:
+            if rec.tax_id:
+                if rec.tax_id.amount_type == 'percent':
+                    rec.other_charge = round(rec.payment_id.payment_base_amount*(rec.tax_id.amount/100))
+                    tax_repartition_line = rec.tax_id.invoice_repartition_line_ids.filtered(
+                        lambda l: l.account_id and not l.repartition_type == 'base'
+                    )[:1]
+                    if tax_repartition_line:
+                        rec.account_id = tax_repartition_line.account_id
+                    else:
+                        rec.account_id = False
                 else:
-                    self.account_id = False
-            else:
-                self.account_id = False
-                self.other_charge = 0.0
-            other_lines = self.payment_id.other_charges_lines.filtered(lambda r: r.other_charge != 0)
-            self.payment_id.amount = self.payment_id.payment_base_amount + float(sum(other_lines.mapped('other_charge')) or 0)
+                    rec.account_id = False
+                    rec.other_charge = 0.0
+                other_lines = rec.payment_id.other_charges_lines.filtered(lambda r: r.other_charge != 0)
+                # AMOUNT-WRITE-GUARD: write the payment amount only when it really changes. Writing it
+                # again with the same value still triggered a re-sync of the journal entry while its
+                # lines were being built, which duplicated every line (two bank lines -> Odoo refuses).
+                new_amount = rec.payment_id.payment_base_amount + float(sum(other_lines.mapped('other_charge')) or 0)
+                if rec.payment_id.amount != new_amount:
+                    rec.payment_id.amount = new_amount
 
 class AccountPayment(models.Model):
     _inherit = "account.payment"
@@ -92,7 +98,9 @@ class AccountPayment(models.Model):
     @api.depends('other_charges_lines.other_charge','payment_base_amount')
     def _update_payment_amount_base(self):
         for line in self.filtered(lambda l: l.payment_base_amount>0 and l.other_charge_applicable):
-            other_lines = self.payment_id.other_charges_lines.filtered(lambda r: r.other_charge != 0)
+            # OTHER-CHARGES-AMOUNT-FIX: read this payment's own charge lines (self.payment_id is empty
+            # here, so the TDS was ignored and the Amount came out equal to the Base Amount).
+            other_lines = line.other_charges_lines.filtered(lambda r: r.other_charge != 0)
             line.amount = line.payment_base_amount + float(sum(other_lines.mapped('other_charge')) or 0)
 
     def _prepare_move_line_default_vals(self, write_off_line_vals=None, force_balance=None):

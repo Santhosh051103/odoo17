@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="seq_fixed_asset" model="ir.sequence">
+        <field name="name">Fixed Asset</field>
+        <field name="code">fixed.asset</field>
+        <field name="prefix">FA/</field>
+        <field name="padding">4</field>
+    </record>
+</odoo>

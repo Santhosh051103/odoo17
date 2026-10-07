@@ -1,0 +1,145 @@
+<?xml version="1.0" ?>
+<odoo noupdate="0">
+    <record id="legal_notice_first_reminder_email_template" model="mail.template">
+        <field name="name">Legal Notice First Reminder</field>
+        <field name="model_id" ref="project.model_project_project"/>
+        <field name="subject">Legal Notice First Reminder: {{object.name}}</field>
+        <field name="email_from">{{ user.email_formatted }}</field>
+<!--        <field name="email_to">{{ (object.user_id.email_formatted or object.work_email) }}</field>-->
+        <field name="body_html">
+            <![CDATA[
+        <p>Hello,</p>
+        <p>This is a reminder that the legal notice for project <b><t t-esc="object.name"/></b> is due.</p>
+        <p>Please take the necessary actions.</p>
+        ]]>
+        </field>
+    </record>
+    <record id="legal_notice_second_reminder_email_template" model="mail.template">
+        <field name="name">Legal Notice Second Reminder: {{object.name}}</field>
+        <field name="model_id" ref="project.model_project_project"/>
+        <field name="subject">Legal Notice Second Reminder: {{object.name}}</field>
+        <field name="email_from">{{ user.email_formatted }}</field>
+<!--        <field name="email_to">{{ (object.user_id.email_formatted or object.work_email) }}</field>-->
+        <field name="body_html">
+            <![CDATA[
+        <p>Hello,</p>
+        <p>This is a second reminder that the legal notice for project <b><t t-esc="object.name"/></b> is due.</p>
+        <p>Please take the necessary actions.</p>
+        ]]>
+        </field>
+    </record>
+
+    <record id="recurring_second_reminder_email_template" model="mail.template">
+        <field name="name">Recurring Task Second Reminder: {{object.name}}</field>
+        <field name="model_id" ref="project.model_project_task"/>
+        <field name="subject">Urgent Reminder: Task "{{object.name}}" is due very soon</field>
+        <field name="email_from">{{ user.email_formatted }}</field>
+        <field name="email_to">{{ ','.join([p.email for p in (object.company_id.recurring_reminder_recipient_ids or object.project_id.company_id.recurring_reminder_recipient_ids) if p.email]) }}</field>
+        <field name="body_html" type="html">
+            <div style="margin: 0px; padding: 0px;">
+                <p>Hello,</p>
+                <p>This is a <strong>final reminder</strong> that the task <strong><t t-out="object.name"/></strong>
+                   under project <strong><t t-out="object.project_id.name"/></strong> is very close to its deadline.</p>
+                <ul>
+                    <li><strong>Deadline:</strong> <t t-out="object.date_deadline or 'Not set'"/></li>
+                    <li><strong>Assigned to:</strong> <t t-out="', '.join(object.user_ids.mapped('name')) or 'Unassigned'"/></li>
+                </ul>
+                <p>Please complete this task as soon as possible.</p>
+                <p>Best regards,<br/>Ekara Partnership</p>
+            </div>
+        </field>
+        <field name="auto_delete" eval="False"/>
+    </record>
+
+    <record id="recurring_first_reminder_email_template" model="mail.template">
+        <field name="name">Recurring Task First Reminder: {{object.name}}</field>
+        <field name="model_id" ref="project.model_project_task"/>
+        <field name="subject">Reminder: Task "{{object.name}}" is due soon</field>
+        <field name="email_from">{{ user.email_formatted }}</field>
+        <field name="email_to">{{ ','.join([p.email for p in (object.company_id.recurring_reminder_recipient_ids or object.project_id.company_id.recurring_reminder_recipient_ids) if p.email]) }}</field>
+        <field name="body_html" type="html">
+            <div style="margin: 0px; padding: 0px;">
+                <p>Hello,</p>
+                <p>This is a reminder that the task <strong><t t-out="object.name"/></strong>
+                   under project <strong><t t-out="object.project_id.name"/></strong> is approaching its deadline.</p>
+                <ul>
+                    <li><strong>Deadline:</strong> <t t-out="object.date_deadline or 'Not set'"/></li>
+                    <li><strong>Assigned to:</strong> <t t-out="', '.join(object.user_ids.mapped('name')) or 'Unassigned'"/></li>
+                </ul>
+                <p>Please ensure this task is completed before the deadline.</p>
+                <p>Best regards,<br/>Ekara Partnership</p>
+            </div>
+        </field>
+        <field name="auto_delete" eval="False"/>
+    </record>
+
+    <record id="statuory_notice_first_reminder_email_template" model="mail.template">
+        <field name="name">Statutory Notice First Reminder: {{object.name}}</field>
+        <field name="model_id" ref="project.model_project_project"/>
+        <field name="subject">Statutory Notice First Reminder: {{object.name}}</field>
+        <field name="email_from">{{ user.email_formatted }}</field>
+<!--        <field name="email_to">{{ (object.user_id.email_formatted or object.work_email) }}</field>-->
+        <field name="body_html">
+            <![CDATA[
+        <p>Hello,</p>
+        <p>This is a reminder that the Statutory notice for project <b><t t-esc="object.name"/></b> is due.</p>
+        <p>Please take the necessary actions.</p>
+        ]]>
+        </field>
+    </record>
+
+    <record id="statuory_notice_second_reminder_email_template" model="mail.template">
+        <field name="name">Statutory Notice Second Reminder: {{object.name}}</field>
+        <field name="model_id" ref="project.model_project_project"/>
+        <field name="subject">Statutory Notice Second Reminder: {{object.name}}</field>
+        <field name="email_from">{{ user.email_formatted }}</field>
+<!--        <field name="email_to">{{ (object.user_id.email_formatted or object.work_email) }}</field>-->
+        <field name="body_html">
+            <![CDATA[
+        <p>Hello,</p>
+        <p>This is a second reminder that the Statutory notice for project <b><t t-esc="object.name"/></b> is due.</p>
+        <p>Please take the necessary actions.</p>
+        ]]>
+        </field>
+    </record>
+
+    <record id="legal_notice_creation_email_template" model="mail.template">
+        <field name="name">Legal Notice Project Creation: {{object.name}}</field>
+        <field name="model_id" ref="project.model_project_project"/>
+        <field name="subject">Legal Notice Project Creation: {{object.name}}</field>
+        <field name="email_from">{{ user.email_formatted }}</field>
+        <field name="email_to">rajesh@ekara.global, sandhya@ekara.global, sanjay@ekara.global, harshita@rajendrarao.com</field>
+        <field name="body_html" type="html">
+            <div style="margin: 0px; padding: 0px;">
+                <p style="margin: 0px; padding: 0px; font-size: 13px;">
+                    Dear Team,
+                    <br/>
+                    <p>A new project for legal notice <t t-out="object.name"/> has been created.Kindly check it.</p>
+                    <p>Thank You.</p>
+
+                </p>
+            </div>
+        </field>
+    </record>
+
+    <record id="statuory_notice_creation_email_template" model="mail.template">
+        <field name="name">Statutory Notice Project Creation: {{object.name}}</field>
+        <field name="model_id" ref="project.model_project_project"/>
+        <field name="subject">Statutory Notice Project Creation: {{object.name}}</field>
+        <field name="email_from">{{ user.email_formatted }}</field>
+        <field name="email_to">rajesh@ekara.global, sandhya@ekara.global, sanjay@ekara.global, harshita@rajendrarao.com</field>
+<!--        <field name="email_to">{{ (object.user_id.email_formatted or object.work_email) }}</field>-->
+        <field name="body_html" type="html">
+            <div style="margin: 0px; padding: 0px;">
+                <p style="margin: 0px; padding: 0px; font-size: 13px;">
+                    Dear Team,
+                    <br/>
+                    <p>A new project for Statutory notice <t t-out="object.name"/> has been created.Kindly check it</p>
+                    <p>Thank You.</p>
+
+                </p>
+            </div>
+        </field>
+    </record>
+
+</odoo>

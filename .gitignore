@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.pyo
+.idea/
+*.log
+*.bak*
+*.with_tds_warning*

@@ -66,6 +66,14 @@ class RequestApproval(models.TransientModel):
         # Add the link to the source document inside the description.
         # in order to bypass the record rule on it
         record = self.env[model_name].browse(res_id)
+        # Payments linked to a bill approval: stop over-limit payments here,
+        # before the request form is filled in and submitted.
+        if model_name == 'account.payment' and hasattr(record, '_check_limit_before_request'):
+            record._check_limit_before_request()
+        # Bills linked to a bill approval: stop TDS entered twice here, before
+        # the request form is filled in and submitted.
+        if model_name == 'account.move' and hasattr(record, '_check_limit_before_request'):
+            record._check_limit_before_request()
         if model_name == 'crossovered.budget' and record.crossovered_budget_line:
             for line in record.crossovered_budget_line:
                 if not line.analytic_account_id and line.user_type == 'odoo':
@@ -201,7 +209,9 @@ class RequestApproval(models.TransientModel):
             account_move_id = self.env['account.move'].sudo().browse(self.origin_ref.id)
             for move in account_move_id.filtered(lambda l: l.move_type in  ['in_invoice']):
                 move.action_validate_no_bill()
-            for move in account_move_id.filtered(lambda l: not l.journal_id.is_opening_balance and not l.statement_line_id):
+            # TDS-NO-BUDGET: TDS entries have no budget and no budget impact.
+            for move in account_move_id.filtered(lambda l: not l.journal_id.is_opening_balance and not l.statement_line_id
+                    and not getattr(l, 'l10n_in_withholding_ref_move_id', False)):
                     # print(move.company_id.disable_budget_company,'pppppppppppppppppppp')
                     # stop
                     if move.move_type == 'entry' and not move.company_id.disable_budget_company:

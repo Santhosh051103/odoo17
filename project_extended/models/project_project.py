@@ -36,6 +36,31 @@ class AccountMove(models.Model):
 
         return records
 
+class ResCompany(models.Model):
+    _inherit = 'res.company'
+
+    # NOTE: Changed comodel from 'res.users' to 'res.partner' so the
+    # many2many_tags widget picks up ALL contacts (customers, vendors,
+    # standalone contacts), not just system users. Relation tables were
+    # renamed (..._partner_rel) since the old tables were built for
+    # res.users (user_id column) - reusing them with a partner_id column
+    # would conflict with the existing schema on module upgrade.
+    # If you need to preserve previously selected users, run a migration
+    # script to copy res.users.partner_id into the new relation tables.
+    legal_notice_recipient_ids = fields.Many2many(
+        'res.partner', 'project_extended_company_legal_notice_partner_rel',
+        'company_id', 'partner_id', string='Legal Notice Recipients',
+        help="Contacts notified by email for Legal Notice project creation and reminders, for this company.")
+    statutory_notice_recipient_ids = fields.Many2many(
+        'res.partner', 'project_extended_company_statutory_notice_partner_rel',
+        'company_id', 'partner_id', string='Statutory Notice Recipients',
+        help="Contacts notified by email for Statutory Notice project creation and reminders, for this company.")
+    recurring_reminder_recipient_ids = fields.Many2many(
+        'res.partner', 'project_extended_company_recurring_reminder_partner_rel',
+        'company_id', 'partner_id', string='Recurring Task Reminder Recipients',
+        help="Contacts notified by email for recurring task reminders, for this company.")
+
+
 class Project(models.Model):
     _inherit = "project.project"
 
@@ -53,34 +78,6 @@ class Project(models.Model):
     has_task_stage_changed = fields.Boolean(string='Has Task Stage Changed', copy=False)
     document_count = fields.Integer(string="Documents", compute="_compute_document_count")
 
-    # @api.depends('date_of_notice', 'last_date')
-    # def _compute_reminder_dates(self):
-    #     for project in self:
-    #         if project.date_of_notice and project.last_date:
-    #             notice_date = fields.Date.from_string(project.date_of_notice)
-    #             last_date = fields.Date.from_string(project.last_date)
-    #
-    #             # Calculate total duration between `date_of_notice` and `last_date`
-    #             total_days = (last_date - notice_date).days
-    #
-    #             # Calculate First Reminder:
-    #             first_reminder_days = total_days // 3
-    #             first_reminder_date = notice_date + timedelta(days=first_reminder_days)
-    #             project.first_reminder_date = first_reminder_date
-    #             project.first_reminder = first_reminder_days
-    #
-    #             # Calculate Second Reminder: 2 days before `last_date`
-    #             second_reminder_date = last_date - timedelta(days=2)
-    #             project.second_reminder_date = second_reminder_date
-    #
-    #             # Calculate days between `date_of_notice` and `second_reminder_date`
-    #             second_reminder_days = (second_reminder_date - notice_date).days
-    #             project.second_reminder = second_reminder_days
-    #         else:
-    #             project.first_reminder_date = False
-    #             project.first_reminder = 0
-    #             project.second_reminder_date = False
-    #             project.second_reminder = 0
 
     def _compute_document_count(self):
         Task = self.env['project.task']
@@ -153,32 +150,37 @@ class Project(models.Model):
 
     def send_reminder(self):
         today = fields.Date.today()
-        projects = self.sudo().search([
+        first_due = self.sudo().search([
             ('first_reminder_date', '<=', today),
-            ('last_date', '>=', today),
+            '|', ('is_legal_notice', '=', True), ('is_statuory_notice', '=', True),
+        ])
+        second_due = self.sudo().search([
+            ('second_reminder_date', '<=', today),
             '|', ('is_legal_notice', '=', True), ('is_statuory_notice', '=', True),
         ])
 
-        stagnant_projects = self.env['project.project']
-        for project in projects:
-            tasks = self.env['project.task'].search([
-                ('project_id', '=', project.id),
-                ('date_last_stage_update', '!=', False),
-            ])
-            unchanged_tasks = tasks.filtered(
-                lambda t: t.date_last_stage_update.replace(microsecond=0) == t.create_date.replace(microsecond=0)
-            )
-            if unchanged_tasks:
-                reminder_cutoff = project.first_reminder_date - timedelta(days=1)
-                # recent_update = max(tasks.mapped('date_last_stage_update')).date()
-                stale_tasks = tasks.filtered(lambda t: t.date_last_stage_update.date() <= reminder_cutoff)
-                if project.first_reminder_date and stale_tasks:
+        def _stagnant(projects):
+            stagnant_projects = self.env['project.project']
+            for project in projects:
+                tasks = self.env['project.task'].search([
+                    ('project_id', '=', project.id),
+                    ('date_last_stage_update', '!=', False),
+                ])
+                unchanged_tasks = tasks.filtered(
+                    lambda t: t.date_last_stage_update.replace(microsecond=0) == t.create_date.replace(microsecond=0)
+                )
+                if unchanged_tasks:
+                    reminder_cutoff = project.first_reminder_date - timedelta(days=1)
+                    stale_tasks = tasks.filtered(lambda t: t.date_last_stage_update.date() <= reminder_cutoff)
+                    if project.first_reminder_date and stale_tasks:
+                        stagnant_projects |= project
+                elif not tasks:
                     stagnant_projects |= project
-            elif not tasks:
-                stagnant_projects |= project
+            return stagnant_projects
 
-        legal_reminders = stagnant_projects.filtered(lambda p: p.is_legal_notice)
-        statuory_reminders = stagnant_projects.filtered(lambda p: p.is_statuory_notice)
+        stagnant_first = _stagnant(first_due)
+        legal_reminders = stagnant_first.filtered(lambda p: p.is_legal_notice)
+        statuory_reminders = stagnant_first.filtered(lambda p: p.is_statuory_notice)
 
         if legal_reminders:
             self._schedule_activities_first_reminder_legal(legal_reminders)
@@ -187,6 +189,17 @@ class Project(models.Model):
         if statuory_reminders:
             self._schedule_activities_first_reminder_statuory(statuory_reminders)
             self._send_first_reminder_email_notifications_statuory(statuory_reminders)
+
+        stagnant_second = _stagnant(second_due)
+        legal_second_reminders = stagnant_second.filtered(lambda p: p.is_legal_notice)
+        statuory_second_reminders = stagnant_second.filtered(lambda p: p.is_statuory_notice)
+
+        if legal_second_reminders:
+            self._send_second_reminder_email_notifications_legal(legal_second_reminders)
+
+        if statuory_second_reminders:
+            self._send_second_reminder_email_notifications_statuory(statuory_second_reminders)
+
 
     # def send_reminder(self):
     #     today = fields.Date.today()
@@ -217,21 +230,20 @@ class Project(models.Model):
 
     @api.model
     def create(self,vals):
-            account_manager_group = self.env.ref('account.group_account_manager')
-            emails = [user.email for user in account_manager_group.users if user.email]
-            if emails:
-                if vals.get('is_legal_notice'):
-                    template = self.env.ref('project_extended.legal_notice_creation_email_template')
-                    template.write({'email_to': ', '.join(emails),
-                                    'subject':'Legal Notice Project Creation - %s'%(vals.get('name'))})
-                    template.send_mail(self.id, force_send=True)
-                elif vals.get('is_statuory_notice'):
-                    template = self.env.ref('project_extended.statuory_notice_creation_email_template')
-                    template.write({'email_to': ', '.join(emails),
-                                    'subject':'Statutory Notice Project Creation - %s'%(vals.get('name'))})
-                    template.send_mail(self.id, force_send=True)
-            vals['company_id'] = self.env.company.id
+            vals['company_id'] = vals.get('company_id') or self.env.company.id
             res = super().create(vals)
+            # Subject and recipients are driven entirely by each template's own
+            # configuration (Settings > Technical > Email Templates), which can
+            # reference the record - e.g. object.company_id.legal_notice_recipient_ids
+            # - for company-specific recipients. Sent AFTER creation so "object"
+            # in the template resolves to the real, saved record (including its
+            # company); previously this ran before the record existed.
+            if vals.get('is_legal_notice'):
+                template = self.env.ref('project_extended.legal_notice_creation_email_template')
+                template.send_mail(res.id, force_send=True)
+            elif vals.get('is_statuory_notice'):
+                template = self.env.ref('project_extended.statuory_notice_creation_email_template')
+                template.send_mail(res.id, force_send=True)
             return res
 
     @api.model
@@ -299,40 +311,28 @@ class Project(models.Model):
             )
 
     def _send_first_reminder_email_notifications_legal(self,legal_first_reminder):
-        account_manager_group = self.env.ref('account.group_account_manager')
-        emails = [user.email for user in account_manager_group.users if user.email]
-        if emails:
-            for rec in legal_first_reminder:
-                template = self.env.ref('project_extended.legal_notice_first_reminder_email_template')
-                template.write({'email_to': ', '.join(emails)})
-                self.env['mail.template'].browse(template.id).send_mail(rec.id, force_send=True)
+        # Recipients come from the template's own static "To (Emails)" field.
+        for rec in legal_first_reminder:
+            template = self.env.ref('project_extended.legal_notice_first_reminder_email_template')
+            self.env['mail.template'].browse(template.id).send_mail(rec.id, force_send=True)
 
     def _send_second_reminder_email_notifications_legal(self,legal_second_reminder):
-        account_manager_group = self.env.ref('account.group_account_manager')
-        emails = [user.email for user in account_manager_group.users if user.email]
-        if emails:
-            for rec in legal_second_reminder:
-                template = self.env.ref('project_extended.legal_notice_second_reminder_email_template')
-                template.write({'email_to': ', '.join(emails)})
-                self.env['mail.template'].browse(template.id).send_mail(rec.id, force_send=True)
+        # Recipients come from the template's own static "To (Emails)" field.
+        for rec in legal_second_reminder:
+            template = self.env.ref('project_extended.legal_notice_second_reminder_email_template')
+            self.env['mail.template'].browse(template.id).send_mail(rec.id, force_send=True)
 
     def _send_first_reminder_email_notifications_statuory(self,statuory_first_reminder):
-        account_manager_group = self.env.ref('account.group_account_manager')
-        emails = [user.email for user in account_manager_group.users if user.email]
-        if emails:
-            for rec in statuory_first_reminder:
-                template = self.env.ref('project_extended.statuory_notice_first_reminder_email_template')
-                template.write({'email_to': ', '.join(emails)})
-                self.env['mail.template'].browse(template.id).send_mail(rec.id, force_send=True)
+        # Recipients come from the template's own static "To (Emails)" field.
+        for rec in statuory_first_reminder:
+            template = self.env.ref('project_extended.statuory_notice_first_reminder_email_template')
+            self.env['mail.template'].browse(template.id).send_mail(rec.id, force_send=True)
 
     def _send_second_reminder_email_notifications_statuory(self,statuory_second_reminder):
-        account_manager_group = self.env.ref('account.group_account_manager')
-        emails = [user.email for user in account_manager_group.users if user.email]
-        if emails:
-            for rec in statuory_second_reminder:
-                template = self.env.ref('project_extended.statuory_notice_second_reminder_email_template')
-                template.write({'email_to': ', '.join(emails)})
-                self.env['mail.template'].browse(template.id).send_mail(rec.id, force_send=True)
+        # Recipients come from the template's own static "To (Emails)" field.
+        for rec in statuory_second_reminder:
+            template = self.env.ref('project_extended.statuory_notice_second_reminder_email_template')
+            self.env['mail.template'].browse(template.id).send_mail(rec.id, force_send=True)
 
 
 CLOSED_STATES = {
@@ -355,8 +355,17 @@ class ProjectTask(models.Model):
     recurring_start_date = fields.Date(string="Start Date")
     first_reminder_date = fields.Date(string="First Reminder Date")
     second_reminder_date = fields.Date(string="Second Reminder Date")
+    first_reminder_sent = fields.Boolean(string="First Reminder Sent", default=False, copy=False)
+    second_reminder_sent = fields.Boolean(string="Second Reminder Sent", default=False, copy=False)
     task_valid_from = fields.Date(string="Task Period From",default=fields.Date.context_today)
     task_done = fields.Boolean(string='Task Done')
+    task_done = fields.Boolean(string='Task Done')
+
+    @api.constrains('recurring_task', 'date_deadline')
+    def _check_deadline_required_for_recurring(self):
+        for task in self:
+            if task.recurring_task and not task.date_deadline:
+                raise ValidationError(_("Deadline is required for a recurring task, since it determines when First/Secondary Reminder emails are sent."))
     task_approved = fields.Boolean(string='Task Approved')
     task_rejected = fields.Boolean(string='Task Rejected')
     task_assign_line_ids = fields.One2many('task.assign.line', 'task_id', string='Task Assign Details', copy=False)
@@ -365,6 +374,8 @@ class ProjectTask(models.Model):
     raise_request_to_id = fields.Many2one('res.users',string='Raise Request To')
     allow_bill_creation = fields.Boolean(string="Allow Bill Creation")
     hide_bill_creation = fields.Boolean(string="Hide Bill Creation")
+    x_has_request_approval = fields.Boolean(string="Has Request Approval",default=False)
+    x_review_result = fields.Char(string="Review Result",store=True)
 
     def action_view_bills(self):
         self.ensure_one()
@@ -373,7 +384,7 @@ class ProjectTask(models.Model):
             'type': 'ir.actions.act_window',
             'name': 'Bills & Journals',
             'res_model': 'account.move',
-            'view_mode': 'tree,form',
+            'view_mode': 'list,form',
             'domain': [('task_id', '=', self.id)],
             'context': {
                 'default_task_id': self.id,
@@ -392,7 +403,7 @@ class ProjectTask(models.Model):
             'target': 'new',
             'context': {
                 'default_move_type': 'in_invoice',
-                'default_task_id': self.id,  # ✅ only this
+                'default_task_id': self.id,  # only this
             }
         }
 
@@ -407,7 +418,7 @@ class ProjectTask(models.Model):
             'target': 'new',
             'context': {
                 'default_move_type': 'entry',
-                'default_task_id': self.id,  # ✅ only this
+                'default_task_id': self.id,  # only this
             }
         }
 
@@ -417,6 +428,11 @@ class ProjectTask(models.Model):
         line_ids.update({'assign_state':'in_progress'})
         self.stage_id = self.env['project.task.type'].search([('name', '=', 'In Progress'),
                                                               ('project_ids', 'in', self.project_id.id)]).id
+        # Explicit confirmation email to whoever clicked Accept, rather than
+        # relying on chatter/follower notifications (which depend on the user
+        # being a subscribed follower with the right subtype opted in).
+        template = self.env.ref('project_extended.task_accepted_confirmation_email_template')
+        template.send_mail(self.id, force_send=True)
 
 
     def action_refuse(self):
@@ -502,74 +518,97 @@ class ProjectTask(models.Model):
     #     for task in self:
     #         template.send_mail(task.id, force_send=True)
 
-    @api.onchange('recurrence_reminder','recurrence_reminder2')
+    def _compute_recurrence_reminder_dates(self):
+        """
+        Shared reminder-date calculation, usable from both the UI onchange
+        and server-side code (e.g. auto-created recurring task occurrences).
+        Does not raise - callers that need the "past deadline" UX warning
+        (the form) check that separately.
+        Returns a dict of {field: value} to write, or {} if nothing to set.
+        """
+        self.ensure_one()
+        vals = {}
+        if self.recurring_task and self.date_deadline:
+            date_str = self.date_deadline.strftime("%Y-%m-%d")
+            date = datetime.strptime(date_str, "%Y-%m-%d").date()
+            if self.recurrence_reminder:
+                vals['first_reminder_date'] = date - timedelta(days=self.recurrence_reminder)
+            if self.recurrence_reminder2:
+                vals['second_reminder_date'] = date - timedelta(days=self.recurrence_reminder2)
+        return vals
+
+    @api.onchange('recurrence_reminder','recurrence_reminder2','date_deadline')
     def _onchange_dates(self):
         """
         Update reminder fields when the date_of_notice or last_date changes.
         """
         for task in self:
-            if task.recurring_task:
-
-                if task.date_deadline:
-                    end_date =  task.date_deadline
-                    date_str = task.date_deadline.strftime("%Y-%m-%d")
-                    date = datetime.strptime(date_str, "%Y-%m-%d").date()
-                    if date < fields.Date.today():
-                        raise UserError(_("Kindly provide the correct date."))
-                    else:
-                        if task.recurrence_reminder:
-                            first_reminder = task.recurrence_reminder
-                            task.first_reminder_date = date - timedelta(days=first_reminder)
-                        if task.recurrence_reminder2:
-                            second_reminder = task.recurrence_reminder2
-                            task.second_reminder_date = date - timedelta(days=second_reminder)
+            if task.recurring_task and task.date_deadline:
+                date_str = task.date_deadline.strftime("%Y-%m-%d")
+                date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                if date < fields.Date.today():
+                    raise UserError(_("Kindly provide the correct date."))
+                else:
+                    vals = task._compute_recurrence_reminder_dates()
+                    if 'first_reminder_date' in vals:
+                        task.first_reminder_date = vals['first_reminder_date']
+                    if 'second_reminder_date' in vals:
+                        task.second_reminder_date = vals['second_reminder_date']
 
     def send_recurring_reminder(self):
         today = fields.Date.today()
+        # First reminder: sent once only, per task
         recurring_first_reminder = self.sudo().search([
-            ('first_reminder_date', '=', today),('recurring_task','=',True)
+            ('first_reminder_date', '!=', False),
+            ('first_reminder_date', '<=', today),
+            ('first_reminder_sent', '=', False),
         ])
+        # Second reminder: sent every day the cron runs, until the task is
+        # marked Done (closed stage) - deliberate daily nag, not one-time.
         recurring_second_reminder = self.sudo().search([
-            ('second_reminder_date', '=', today),('recurring_task','=',True)
-        ])
+            ('second_reminder_date', '!=', False),
+            ('second_reminder_date', '<=', today),
+            ('stage_id.is_done_stage', '=', False),
+          ])
         if recurring_first_reminder:
             self._send_first_reminder_email_notifications_recurring(recurring_first_reminder)
         if recurring_second_reminder:
             self._send_second_reminder_email_notifications_recurring(recurring_second_reminder)
 
     def _send_second_reminder_email_notifications_recurring(self,recurring_second_reminder):
-        account_manager_group = self.env.ref('account.group_account_manager')
-        emails = [user.email for user in account_manager_group.users if user.email]
-        if emails:
-            for rec in recurring_second_reminder:
-                template = self.env.ref('project_extended.recurring_second_reminder_email_template')
-                template.write({'email_to': ', '.join(emails)})
-                self.env['mail.template'].browse(template.id).send_mail(rec.id, force_send=True)
+        # Recipients come from the template's own static "To (Emails)" field.
+        # NOTE: no second_reminder_sent flag set here on purpose - this is
+        # meant to resend daily until the task is closed.
+        for rec in recurring_second_reminder:
+            template = self.env.ref('project_extended.recurring_second_reminder_email_template')
+            self.env['mail.template'].browse(template.id).send_mail(rec.id, force_send=True)
 
     def _send_first_reminder_email_notifications_recurring(self,recurring_first_reminder):
-        account_manager_group = self.env.ref('account.group_account_manager')
-        emails = [user.email for user in account_manager_group.users if user.email]
-        if emails:
-            for rec in recurring_first_reminder:
-                template = self.env.ref('project_extended.recurring_first_reminder_email_template')
-                template.write({'email_to': ', '.join(emails)})
-                self.env['mail.template'].browse(template.id).send_mail(rec.id, force_send=True)
+        # Recipients come from the template's own static "To (Emails)" field.
+        for rec in recurring_first_reminder:
+            template = self.env.ref('project_extended.recurring_first_reminder_email_template')
+            self.env['mail.template'].browse(template.id).send_mail(rec.id, force_send=True)
+            rec.first_reminder_sent = True
 
+    def write(self, vals):
+        res = super().write(vals)
+        if 'stage_id' in vals:
+            for task in self:
+                if task.stage_id.is_done_stage and task.state not in ('1_done', '1_canceled'):
+                    task.state = '1_done'
+        return res
 
     def _cron_inverse_state(self):
-        today = fields.Date.today()
-        start_of_day = today.strftime('%Y-%m-%d 00:00:00')
-        end_of_day = today.strftime('%Y-%m-%d 23:59:59')
-
         task_obj = self.env['project.task'].search([
-            ('planned_date_begin', '>=', start_of_day),
-            ('planned_date_begin', '<=', end_of_day)
+            ('recurrence_id', '!=', False),
+            ('state', 'in', CLOSED_STATES),
         ])
-        print(task_obj,'lllll')
         for task in task_obj:
             last_task_id_per_recurrence_id = task.recurrence_id._get_last_task_id_per_recurrence_id()
-            if task.state in CLOSED_STATES and task.id == last_task_id_per_recurrence_id.get(task.recurrence_id.id):
+            if task.id == last_task_id_per_recurrence_id.get(task.recurrence_id.id):
                 task.recurrence_id._create_next_occurrence(task)
+
+
 class ProjectTaskRecurrence(models.Model):
     _inherit = 'project.task.recurrence'
     # def _create_next_occurrence(self, occurrence_from):
@@ -591,17 +630,36 @@ class ProjectTaskRecurrence(models.Model):
         self.ensure_one()
         self = self.with_context(mail_create_nosubscribe=True)
         create_values = self._create_next_occurrence_values(occurrence_from)
-        date_deadline = create_values['date_deadline']
-        planned_date_begin = create_values['planned_date_begin']
-        date_str = occurrence_from.planned_date_begin.strftime("%Y-%m-%d")
-        date = datetime.strptime(date_str, "%Y-%m-%d").date()
-        if not (self.repeat_type == 'until' and date_deadline and date_deadline.date() > self.repeat_until):
-            if date == fields.Date.today():
-                task = self.env['project.task'].sudo().create(create_values)
-                task.write({
-                    'recurrence_reminder':occurrence_from.recurrence_reminder,
-                    'recurrence_reminder2':occurrence_from.recurrence_reminder2
-                })
+
+        # Force every new monthly occurrence to start on the 1st and be due
+        # on the 5th of the following month, regardless of the previous
+        # occurrence's dates (needed because a blank deadline would
+        # otherwise propagate forever).
+        base_date = occurrence_from.planned_date_begin or fields.Datetime.now()
+        if base_date.month == 12:
+            next_month_start = base_date.replace(year=base_date.year + 1, month=1, day=1)
+        else:
+            next_month_start = base_date.replace(month=base_date.month + 1, day=1)
+
+        create_values['planned_date_begin'] = next_month_start
+        create_values['date_deadline'] = next_month_start + timedelta(days=4)
+
+        # Previously only created the next occurrence if
+        # occurrence_from.planned_date_begin == today - marking a task Done
+        # on any other day silently broke the recurrence. Removed.
+        task = self.env['project.task'].sudo().create(create_values)
+        write_vals = {
+            'recurrence_reminder': occurrence_from.recurrence_reminder,
+            'recurrence_reminder2': occurrence_from.recurrence_reminder2,
+        }
+        # @api.onchange never fires on server-side create/write, so the
+        # reminder dates must be computed explicitly here - otherwise
+        # the cron that checks first_reminder_date/second_reminder_date
+        # will never find this occurrence.
+        task.recurrence_reminder = occurrence_from.recurrence_reminder
+        task.recurrence_reminder2 = occurrence_from.recurrence_reminder2
+        write_vals.update(task._compute_recurrence_reminder_dates())
+        task.write(write_vals)
 
 
 class TaskAssignLine(models.Model):

@@ -2,7 +2,7 @@
     'name':'Ekara Dashboard',
     'version':'17.0.1.0',
     'author': 'Deekshith',
-    'depends':['hr','web','hr_contract','hr_appraisal','survey'],
+    'depends':['hr','web','hr_contract','hr_appraisal','survey','hr_resignation'],
     'data':[
         'security/ir.model.access.csv',
         'views/hr_dashboard_views.xml',

@@ -151,6 +151,23 @@
                             <field name="taxable_value" readonly="approver_status != 'draft'" required="1"/>
                             <field name="gst" readonly="approver_status != 'draft'"/>
                             <field name="total_value" readonly="1"/>
+                            <field name="is_reverse_charge" readonly="approver_status != 'draft'"/>
+                            <field name="total_payable" readonly="1"/>
+                            <field name="tds_deducted_actual" readonly="1"/>
+                            <field name="remaining_taxable_value" readonly="1"/>
+                            <field name="remaining_gst_value" readonly="1"/>
+                            <field name="total_taxable_paid" readonly="1"/>
+                            <field name="total_gst_paid" readonly="1"/>
+                            <field name="taxable_settled" readonly="1"/>
+                            <field name="remaining_taxable_to_pay" readonly="1"/>
+                            <field name="remaining_gst_to_pay" readonly="1"/>
+                            <field name="total_paid_amount" readonly="1"/>
+                            <field name="vendor_balance_payable" readonly="1"/>
+                            <field name="excess_paid" readonly="1" invisible="excess_paid == 0"/>
+                            <field name="tds_bill_lines" readonly="1"/>
+                            <field name="tds_bill_button" readonly="1"/>
+                            <field name="tds_payment_button" readonly="1"/>
+                            <field name="tds_payment_charges" readonly="1"/>
                         </group>
                     </group>
 
@@ -239,7 +256,7 @@
         <field name="arch" type="xml">
             <tree string="Bill Approvals"
                   decoration-muted="approver_status == 'done'"
-                  decoration-danger="approver_status == 'rejected'"
+                  decoration-danger="approver_status == 'rejected' or excess_paid > 0"
                   decoration-success="approver_status in ('approved','done')"
                   decoration-warning="approver_status in ('waiting_l1','waiting_l2','waiting_l3')">
                 <field name="name" optional="hide"/>
@@ -255,6 +272,22 @@
                 <field name="taxable_value" optional="hide"/>
                 <field name="gst" optional="hide"/>
                 <field name="total_value" optional="hide"/>
+                <field name="is_reverse_charge" optional="hide"/>
+                <field name="tds_deducted_actual" optional="hide"/>
+                <field name="remaining_taxable_value" optional="hide"/>
+                <field name="remaining_gst_value" optional="hide"/>
+                <field name="total_taxable_paid" optional="hide"/>
+                <field name="total_gst_paid" optional="hide"/>
+                <field name="taxable_settled" optional="hide"/>
+                <field name="remaining_taxable_to_pay" optional="hide"/>
+                <field name="remaining_gst_to_pay" optional="hide"/>
+                <field name="total_paid_amount" optional="hide"/>
+                <field name="vendor_balance_payable" optional="hide"/>
+                <field name="excess_paid" optional="hide"/>
+                <field name="tds_bill_lines" optional="hide"/>
+                <field name="tds_bill_button" optional="hide"/>
+                <field name="tds_payment_button" optional="hide"/>
+                <field name="tds_payment_charges" optional="hide"/>
                 <field name="approver_status" widget="badge"
                        decoration-success="approver_status in ('approved','done')"
                        decoration-warning="approver_status in ('waiting_l1','waiting_l2','waiting_l3')"
@@ -262,6 +295,10 @@
                 <field name="move_status" optional="hide"/>
                 <field name="payment_status_display" optional="hide"/>
                 <field name="payment_status_refresh" column_invisible="1"/>
+                <field name="attachment_count" column_invisible="1"/>
+                <button name="action_view_attachments" type="object"
+                        icon="fa-paperclip" title="View Attachments"
+                        invisible="attachment_count == 0"/>
                 <field name="company_id" optional="hide"/>
                 <field name="can_approve_l1" column_invisible="1"/>
                     <field name="can_approve_l2" column_invisible="1"/>
@@ -357,6 +394,68 @@
             ('is_history', '=', False)]
         </field>
     </record>
+    <!-- ── Bills Approved: its own list, with the balance columns visible by default ──
+         The list view above is shared with the Bill Approvals menu. Users' saved
+         column choices are stored in the browser and are reset whenever the columns
+         of a view change, so the columns needed here are made visible by default
+         instead of relying on each user re-ticking them. -->
+    <record id="view_bill_approval_approved_list" model="ir.ui.view">
+        <field name="name">bill.approval.approved.list</field>
+        <field name="model">bill.approval</field>
+        <field name="mode">primary</field>
+        <field name="inherit_id" ref="view_bill_approval_list"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='name']" position="attributes">
+                <attribute name="optional">show</attribute>
+            </xpath>
+            <xpath expr="//field[@name='supplier_name']" position="attributes">
+                <attribute name="optional">show</attribute>
+            </xpath>
+            <xpath expr="//field[@name='taxable_value']" position="attributes">
+                <attribute name="optional">show</attribute>
+            </xpath>
+            <xpath expr="//field[@name='gst']" position="attributes">
+                <attribute name="optional">show</attribute>
+            </xpath>
+            <xpath expr="//field[@name='total_taxable_paid']" position="attributes">
+                <attribute name="optional">show</attribute>
+            </xpath>
+            <xpath expr="//field[@name='total_gst_paid']" position="attributes">
+                <attribute name="optional">show</attribute>
+            </xpath>
+            <xpath expr="//field[@name='tds_deducted_actual']" position="attributes">
+                <attribute name="optional">show</attribute>
+            </xpath>
+            <xpath expr="//field[@name='remaining_taxable_to_pay']" position="attributes">
+                <attribute name="optional">show</attribute>
+            </xpath>
+            <xpath expr="//field[@name='remaining_gst_to_pay']" position="attributes">
+                <attribute name="optional">show</attribute>
+            </xpath>
+            <xpath expr="//field[@name='vendor_balance_payable']" position="attributes">
+                <attribute name="optional">show</attribute>
+            </xpath>
+            <xpath expr="//field[@name='excess_paid']" position="attributes">
+                <attribute name="optional">show</attribute>
+            </xpath>
+            <xpath expr="//field[@name='l1_status']" position="attributes">
+                <attribute name="optional">hide</attribute>
+            </xpath>
+            <xpath expr="//field[@name='l2_status']" position="attributes">
+                <attribute name="optional">hide</attribute>
+            </xpath>
+            <xpath expr="//field[@name='l3_status']" position="attributes">
+                <attribute name="optional">hide</attribute>
+            </xpath>
+        </field>
+    </record>
+    <record id="action_bill_approved_list_view" model="ir.actions.act_window.view">
+        <field name="sequence">1</field>
+        <field name="view_mode">tree</field>
+        <field name="view_id" ref="view_bill_approval_approved_list"/>
+        <field name="act_window_id" ref="action_bill_approved"/>
+    </record>
+
     <record id="action_bill_history" model="ir.actions.act_window">
         <field name="name">Bills History</field>
         <field name="res_model">bill.approval</field>

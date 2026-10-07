@@ -1,0 +1,3 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_hr_leave_encashment_employee,hr.leave.encashment.employee,model_hr_leave_encashment,base.group_user,1,1,1,0
+access_hr_leave_encashment_officer,hr.leave.encashment.officer,model_hr_leave_encashment,hr_holidays.group_hr_holidays_user,1,1,1,1

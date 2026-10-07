@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="task_accepted_confirmation_email_template" model="mail.template">
+        <field name="name">Task Accepted Confirmation</field>
+        <field name="model_id" ref="project.model_project_task"/>
+        <field name="subject">Task Accepted: {{ object.name }}</field>
+        <field name="email_from">{{ user.email_formatted }}</field>
+        <field name="email_to">{{ user.email_formatted }}</field>
+        <field name="body_html" type="html">
+            <div style="margin: 0px; padding: 0px;">
+                <p>Hi {{ user.name }},</p>
+                <p>This confirms you have accepted the task <strong>{{ object.name }}</strong>
+                   under project <strong>{{ object.project_id.name }}</strong>.</p>
+                <p>Deadline: {{ object.date_deadline or 'Not set' }}</p>
+            </div>
+        </field>
+        <field name="auto_delete" eval="True"/>
+    </record>
+</odoo>

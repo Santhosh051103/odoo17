@@ -1,6 +1,5 @@
-from odoo import _, api, fields, models , Command
+from odoo import models, fields, api, _
 from odoo.exceptions import UserError
-from datetime import date, timedelta
 
 class AccountPaymentInvoices(models.Model):
     _name = 'account.payment.invoice.line'
@@ -16,28 +15,6 @@ class AccountPaymentInvoices(models.Model):
     is_reconcile_amount = fields.Boolean(string='Reconcile Amount')
     is_reconciled_en = fields.Boolean(string="Reconciled")
 
-    # @api.onchange('reconcile_amount')
-    # def reconcile_amount_lines_update(self):
-    #     total_amount = 0
-    #     pay_id = self.payment_id
-    #     for rec in self.payment_id.payment_invoice_ids:
-    #         total_amount += rec.reconcile_amount
-    #     print(pay_id,total_amount,'bbbbb')
-    #     pay_id.amount = total_amount
-
-
-    # @api.onchange('reconcile_amount')
-    # def reconcile_amount_lines_update(self):
-    #     total_amount = 0
-    #     if self.payment_id:
-    #         # for rec in self.payment_id.payment_invoice_ids:
-    #         #     total_amount += rec.reconcile_amount
-    #         self.payment_id.amount = sum(self.payment_id.payment_invoice_ids.mapped('reconcile_amount'))
-    #         self._origin.payment_id.write({
-    #             'amount':sum(self.payment_id.payment_invoice_ids.mapped('reconcile_amount'))
-    #         })
-    #         print("Updated amount:", self.payment_id.amount)
-
 
 class AccountPayment(models.Model):
     _inherit = 'account.payment'
@@ -52,12 +29,6 @@ class AccountPayment(models.Model):
     advance_payment_done = fields.Boolean(string='Advance Payment Done')
     payment_compute = fields.Float(compute = 'compute_bill_payment_amount',string='Compute')
 
-    # @api.onchange('payment_invoice_ids')
-    # def reconcile_amount_lines_update(self):
-    #     for rec1 in self:
-    #         rec1.amount = sum(rec1.payment_invoice_ids.mapped('reconcile_amount'))
-
-    # @api.depends('reconciled_bill_ids')
     def compute_bill_payment_amount(self):
             self.payment_compute = 0
             if self.reconciled_bill_ids:
@@ -69,7 +40,6 @@ class AccountPayment(models.Model):
                             counterpart_line = reconciled_partial["aml"]
                             payment_id = counterpart_line.payment_id.id
 
-                            # add amount only if payment not already counted
                             if payment_id == self.id:
                                 total_payment += reconciled_partial["amount"]
                         move.payment_amount = total_payment
@@ -82,7 +52,6 @@ class AccountPayment(models.Model):
                             counterpart_line = reconciled_partial["aml"]
                             payment_id = counterpart_line.payment_id.id
 
-                            # add amount only if payment not already counted
                             if payment_id == self.id:
                                 total_payment += reconciled_partial["amount"]
                         move.payment_amount = total_payment
@@ -98,21 +67,34 @@ class AccountPayment(models.Model):
     def update_reconcile_amount(self):
         for rec in self:
             invoice_lines = rec.payment_invoice_ids.filtered(lambda l: l.is_reconcile_amount)
+
+            # Guard: "Update Amount" must not silently zero out the payment
+            # when nothing has actually been selected. Previously, with no
+            # line ticked, this set rec.amount = 0 without complaint, and
+            # that zero-amount payment could then proceed straight into
+            # the approval workflow (Draft -> To Approve) with no real
+            # value behind it. Require either an advance-payment flag or
+            # at least one ticked invoice line before allowing this to run.
+            if not rec.advance_payment and not invoice_lines:
+                raise UserError(_(
+                    "Please tick at least one invoice to reconcile against "
+                    "before clicking Update Amount, or mark this as an "
+                    "Advance Payment if it isn't meant to settle a "
+                    "specific bill."
+                ))
+
             total_reconcile = sum(abs(line.residual) for line in invoice_lines)
             rec.amount = total_reconcile
             rec.amount_onchange_manual()
             rec.compute_unallocated_amount()
 
-            # ✅ compute ref AFTER updating all lines
             ref_value = rec._prepare_ref_from_invoices()
 
             update_vals = {'ref': ref_value}
 
-            # CONDITION → update towards also
             if (not rec.show_partner_bank_account) or rec.payment_type == 'inbound':
                 update_vals['towards'] = ref_value
 
-            # ✅ single write per payment
             super(type(rec), rec).write(update_vals)
 
     def update_entry(self):
@@ -161,13 +143,26 @@ class AccountPayment(models.Model):
                     lines = payment.move_id.line_ids.filtered(
                         lambda line: line.credit > 0 and line.account_id.account_type in ['asset_receivable',
                                                                                           'liability_payable'])
-                    # pdb.set_trace()
                     lines += line_id.invoice_id.move_id.line_ids.filtered(
                         lambda line: line.account_id == lines[0].account_id and not line.reconciled)
                     lines.with_context(amount=line_id.reconcile_amount).reconcile()
                     lines.is_entry_reconciled = True
 
     def update_to_get_vendor_invoices(self):
+        # SCOPING FIX: when this payment is linked to a bill.approval
+        # (approval_id set), only offer bills belonging to that SAME
+        # approval -- not every open bill for this vendor across every
+        # approval. Without this, it's dangerously easy to tick/type a
+        # reconcile amount against the wrong approval's bill (confirmed
+        # to have actually happened -- a payment meant for one approval
+        # silently reconciled against two OTHER already-settled bills
+        # from different approvals, double-paying them). Falls back to
+        # the original vendor-wide domain when approval_id isn't set, so
+        # this module still works standalone outside the approval flow.
+        approval_scope = (
+            [('move_id.approval_id', '=', self.approval_id.id)]
+            if self.approval_id else []
+        )
         if self.payment_type in ['outbound'] and self.partner_type and self.partner_id and self.currency_id:
             self.payment_invoice_ids = [(6, 0, [])]
             domain1= [
@@ -176,7 +171,7 @@ class AccountPayment(models.Model):
                 ('move_id.move_type', 'in', ['entry', 'in_invoice', 'in_refund']),
                 ('account_id.account_type', 'in', ['liability_payable']),
                 ('amount_residual', '!=', 0),('credit', '!=', 0),('company_id', '=', self.company_id.id),
-                ('currency_id', '=', self.currency_id.id)]
+                ('currency_id', '=', self.currency_id.id)] + approval_scope
             invoice_recs = self.env['account.move.line'].sudo().search(domain1)
             invoice_recs = invoice_recs.sorted(lambda l: l.move_id.invoice_date)
             payment_invoice_values = []
@@ -191,15 +186,20 @@ class AccountPayment(models.Model):
                 ('move_id.move_type', 'in', ['out_invoice', 'out_refund']),
                 ('account_id.account_type', 'in', ['asset_receivable']),
                 ('amount_residual', '!=', 0),('debit', '!=', 0),('company_id', '=', self.company_id.id),
-                ('currency_id', '=', self.currency_id.id)]
+                ('currency_id', '=', self.currency_id.id)] + approval_scope
             invoice_recs = self.env['account.move.line'].sudo().search(domain1)
             payment_invoice_values = []
             for invoice_rec in invoice_recs:
                 payment_invoice_values.append([0, 0, {'invoice_id': invoice_rec.id}])
             self.payment_invoice_ids = payment_invoice_values
 
-    @api.onchange('payment_type', 'partner_type', 'partner_id', 'currency_id')
+    @api.onchange('payment_type', 'partner_type', 'partner_id', 'currency_id', 'approval_id')
     def _onchange_to_get_vendor_invoices(self):
+        # Same scoping fix as update_to_get_vendor_invoices above.
+        approval_scope = (
+            [('move_id.approval_id', '=', self.approval_id.id)]
+            if self.approval_id else []
+        )
         if self.payment_type in ['outbound'] and self.partner_type and self.partner_id and self.currency_id:
             self.payment_invoice_ids = [(6, 0, [])]
             domain1= [
@@ -208,29 +208,13 @@ class AccountPayment(models.Model):
                 ('move_id.move_type', 'in', ['in_invoice', 'in_refund']),
                 ('account_id.account_type', 'in', ['liability_payable']),
                 ('amount_residual', '!=', 0),('credit', '!=', 0),('company_id', '=', self.company_id.id),
-                ('currency_id', '=', self.currency_id.id)]
+                ('currency_id', '=', self.currency_id.id)] + approval_scope
             invoice_recs = self.env['account.move.line'].sudo().search(domain1)
             invoice_recs = invoice_recs.sorted(lambda l: l.move_id.invoice_date)
             payment_invoice_values = []
             for invoice_rec in invoice_recs:
                 payment_invoice_values.append([0, 0, {'invoice_id': invoice_rec.id}])
             self.payment_invoice_ids = payment_invoice_values
-            # for line in invoice_recs:
-            #     if line.id == 35443:
-            #         pdb.set_trace()
-            # payment_invoice_values = []
-            # for invoice_rec in invoice_recs:
-            #     move_type = invoice_rec.move_id.move_type
-            #     if move_type != 'entry':
-            #         total = invoice_rec.move_id.amount_total
-            #     else:
-            #         total = invoice_rec.debit if invoice_rec.debit > 0 else invoice_rec.credit
-
-            #     payment_invoice_values.append([0, 0, {
-            #         # 'invoice_id': invoice_rec.id,
-            #         'amount_total': total,
-            #     }])
-            # self.payment_invoice_ids = invoice_recs
         if self.payment_type in ['inbound'] and self.partner_type and self.partner_id and self.currency_id:
             self.payment_invoice_ids = [(6, 0, [])]
             domain1= [
@@ -239,45 +223,20 @@ class AccountPayment(models.Model):
                 ('move_id.move_type', 'in', ['entry', 'out_invoice', 'out_refund']),
                 ('account_id.account_type', 'in', ['asset_receivable']),
                 ('amount_residual', '!=', 0),('debit', '!=', 0),('company_id', '=', self.company_id.id),
-                ('currency_id', '=', self.currency_id.id)]
+                ('currency_id', '=', self.currency_id.id)] + approval_scope
             invoice_recs = self.env['account.move.line'].sudo().search(domain1)
             invoice_recs = invoice_recs.sorted(
-                lambda l: l.move_id.invoice_date or date.max
+                lambda l: l.move_id.invoice_date or fields.Date.max
             )
-            # pdb.set_trace()
-            # payment_invoice_values = []
-            # for invoice_rec in invoice_recs:
-            #     move_type = invoice_rec.move_id.move_type
-            #     if move_type != 'entry':
-            #         total = invoice_rec.move_id.amount_total
-            #     else:
-            #         total = invoice_rec.debit if invoice_rec.debit > 0 else invoice_rec.credit
-
-            #     payment_invoice_values.append([0, 0, {
-            #         'invoice_id': invoice_rec.id,
-            #         'amount_total': total,
-            #     }])
-            # self.payment_invoice_ids = invoice_recs
             payment_invoice_values = []
             for invoice_rec in invoice_recs:
                 payment_invoice_values.append([0, 0, {'invoice_id': invoice_rec.id}])
             self.payment_invoice_ids = payment_invoice_values
 
-    # @api.onchange('payment_invoice_ids')
-    # def reconcile_amount_onchange(self):
-    #     for rec in self:
-    #         total = 0
-    #         for pay in rec.payment_invoice_ids:
-    #             total += pay.reconcile_amount
-    #         if rec.amount < total:
-    #             raise UserError(
-    #                 _("Alert!! You are trying to allocate an amount that exceeds the payment amount."))
-
     @api.onchange('advance_payment')
     def amount_advance_payment(self):
         if self.advance_payment:
             self.payment_invoice_ids.update({'reconcile_amount':0.0})
-
 
     @api.onchange('amount')
     def amount_onchange(self):
@@ -285,34 +244,19 @@ class AccountPayment(models.Model):
             if not rec.advance_payment:
                 if rec.payment_invoice_ids:
                     for line in rec.payment_invoice_ids:
-                        print('444')
-                        # line.reconcile_amount = 0.0
+                        pass
                     if rec.amount > 0:
                         for line in rec.payment_invoice_ids:
                             total_reconcile = sum(abs(line.reconcile_amount) for line in rec.payment_invoice_ids)
                             if total_reconcile < rec.amount:
                                 available_amount = rec.amount - total_reconcile
                                 if abs(line.residual) < available_amount:
-                                        print('1')
                                         line.reconcile_amount = abs(line.residual)
                                 else:
-                                    print('2')
                                     line.reconcile_amount = available_amount
                     else:
                         for line in rec.payment_invoice_ids:
-                            print('3')
                             line.reconcile_amount = 0
-
-    # def write(self,vals):
-    #     super(AccountPayment,self).write(vals)
-    #     total_amount = 0
-    #     for rec1 in self:
-    #         for rec in rec1.payment_invoice_ids:
-    #             total_amount += rec.reconcile_amount
-    #         print('total---------',total_amount)
-    #         rec1.amount = total_amount
-
-
 
     def action_draft(self):
         super(AccountPayment, self).action_draft()
@@ -330,15 +274,9 @@ class AccountPayment(models.Model):
         for payment in self:
             if payment.payment_invoice_ids:
                 total_reconcile_amount = sum(payment.payment_invoice_ids.mapped('reconcile_amount'))
-                # total_payment_available = sum(payment.other_charges_lines.mapped('other_charge')) + payment.amount
                 total_payment_amount_main = payment.amount
-                # total_reconcile_line_amount = sum(payment.other_charges_lines.mapped('other_charge'))
                 total_reconcile_line_amount = 0
                 total_payment_available = total_payment_amount_main + total_reconcile_line_amount
-                # pdb.set_trace()
-                # if total_payment_available != total_reconcile_amount:
-                #     raise UserError(
-                #         _("The sum of the reconcile amount of listed invoices is not equal to payment amount."))
                 if not self.advance_payment and not payment.payment_invoice_ids.filtered(lambda line: line.reconcile_amount > 0):
                     raise UserError(_("Kindly update the amount to reconcile for each transactions."))
 
@@ -351,7 +289,6 @@ class AccountPayment(models.Model):
                     self.ensure_one()
                     if payment.payment_type == 'inbound':
                         lines = payment.move_id.line_ids.filtered(lambda line: line.credit > 0 and line.account_id.account_type in ['asset_receivable','liability_payable'])
-                        # pdb.set_trace()
                         lines += line_id.invoice_id.move_id.line_ids.filtered(
                             lambda line: line.account_id == lines[0].account_id and not line.reconciled)
                         lines.reconcile()
@@ -364,7 +301,6 @@ class AccountPayment(models.Model):
                         lines.is_entry_reconciled = True
                 else:
                     self.ensure_one()
-                    # pdb.set_trace()
                     if payment.payment_type == 'inbound':
                         lines = payment.move_id.line_ids.filtered(lambda line: line.credit > 0 and line.account_id.account_type in ['asset_receivable','liability_payable'])
                         if lines:
@@ -432,11 +368,3 @@ class AccountPayment(models.Model):
                         })
                         if self.source_payment.unallocated_amount <=0:
                             self.source_payment.advance_payment_done = True
-
-            # stop
-
-    # def action_cancel(self):
-    #     for rec in self:
-    #         res = super().action_cancel()
-    #         if rec.unallocated_amount:
-

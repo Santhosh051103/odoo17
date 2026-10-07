@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <template id="report_partner_ledger_document">
+        <t t-call="web.html_container">
+            <t t-foreach="docs" t-as="o">
+                <t t-foreach="o.partner_ids" t-as="partner">
+                    <t t-call="web.external_layout">
+                        <div class="page partner_ledger_page">
+                            <style>
+                                .partner_ledger_page { font-size: 12px; }
+                                .pl_center { text-align: center; }
+                                .pl_company { font-size: 15px; font-weight: bold; }
+                                .pl_ledger_name { font-weight: bold; }
+                                .pl_title { font-style: italic; }
+                                .pl_period { margin: 6px 0 14px 0; font-weight: bold; }
+                                .pl_table {
+                                    width: 100%;
+                                    border-collapse: collapse;
+                                    table-layout: fixed;
+                                }
+                                .pl_table th, .pl_table td {
+                                    padding: 4px 6px;
+                                    vertical-align: top;
+                                }
+                                .pl_table thead th {
+                                    border-top: 1px solid #000;
+                                    border-bottom: 1px solid #000;
+                                    text-align: left;
+                                    font-weight: bold;
+                                }
+                                .pl_table tbody td { border-bottom: 1px solid #ccc; }
+                                .pl_table tfoot td { border-top: 1px solid #000; font-weight: bold; }
+                                .pl_num { text-align: right; white-space: nowrap; }
+                                .pl_sub { padding-left: 10px; color: #444; }
+                                .pl_narration { color: #555; margin-top: 2px; }
+                                .pl_col_date { width: 9%; white-space: nowrap; }
+                                .pl_col_part { width: 42%; }
+                                .pl_col_credit { width: 12%; }
+                                .pl_col_vtype { width: 12%; white-space: nowrap; }
+                                .pl_col_vno { width: 10%; white-space: nowrap; }
+                                .pl_col_debit { width: 15%; }
+                            </style>
+
+                            <div class="pl_center pl_company" t-esc="o.env.company.name"/>
+                            <div class="pl_center pl_ledger_name">
+                                <span t-if="partner.ref" t-esc="partner.ref"/>
+                                <span t-esc="' ' + partner.name if partner.ref else partner.name"/>
+                            </div>
+                            <div class="pl_center pl_title">Ledger Account</div>
+                            <div class="pl_center" t-esc="o.get_partner_address(partner)"/>
+                            <div class="pl_center pl_period">
+                                <span t-esc="o.fmt_date(o.date_from) if o.date_from else 'Beginning'"/>
+                                to
+                                <span t-esc="o.fmt_date(o.date_to)"/>
+                            </div>
+
+                            <t t-set="data" t-value="o.get_partner_data(partner)"/>
+
+                            <table class="pl_table">
+                                <colgroup>
+                                    <col class="pl_col_date"/>
+                                    <col class="pl_col_part"/>
+                                    <col class="pl_col_credit"/>
+                                    <col class="pl_col_vtype"/>
+                                    <col class="pl_col_vno"/>
+                                    <col class="pl_col_debit"/>
+                                </colgroup>
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Particulars</th>
+                                        <th class="pl_num">Credit</th>
+                                        <th>Vch Type</th>
+                                        <th>Vch No.</th>
+                                        <th class="pl_num">Debit</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr t-if="o.date_from and (data['opening_debit'] or data['opening_credit'])">
+                                        <td/>
+                                        <td><strong>Opening Balance</strong></td>
+                                        <td class="pl_num">
+                                            <span t-if="data['opening_credit']"
+                                                  t-esc="'{:,.2f}'.format(data['opening_credit'])"/>
+                                        </td>
+                                        <td/>
+                                        <td/>
+                                        <td class="pl_num">
+                                            <span t-if="data['opening_debit']"
+                                                  t-esc="'{:,.2f}'.format(data['opening_debit'])"/>
+                                        </td>
+                                    </tr>
+
+                                    <tr t-foreach="data['lines']" t-as="line">
+                                        <td><span t-esc="line['date_display']"/></td>
+                                        <td>
+                                            <t t-if="len(line['counter_lines']) == 1">
+                                                <t t-set="cl" t-value="line['counter_lines'][0]"/>
+                                                <div>
+                                                    <span t-esc="cl['side']"/>
+                                                    <span t-if="cl['code']" t-esc="' ' + cl['code']"/>
+                                                    <span t-esc="' ' + cl['name']"/>
+                                                </div>
+                                            </t>
+                                            <t t-if="len(line['counter_lines']) &gt; 1">
+                                                <div>(as per details)</div>
+                                                <div class="pl_sub" t-foreach="line['counter_lines']" t-as="cl">
+                                                    <span t-if="cl['code']" t-esc="cl['code'] + ' '"/>
+                                                    <span t-esc="cl['name']"/>
+                                                    <span t-esc="'&#160;&#160;' + '{:,.2f}'.format(cl['amount']) + ' ' + cl['side']"/>
+                                                </div>
+                                            </t>
+                                            <div class="pl_narration" t-if="line['narration']" t-esc="line['narration']"/>
+                                        </td>
+                                        <td class="pl_num">
+                                            <span t-if="line['credit']" t-esc="'{:,.2f}'.format(line['credit'])"/>
+                                        </td>
+                                        <td><span t-esc="line['vch_type']"/></td>
+                                        <td><span t-esc="line['vch_no']"/></td>
+                                        <td class="pl_num">
+                                            <span t-if="line['debit']" t-esc="'{:,.2f}'.format(line['debit'])"/>
+                                        </td>
+                                    </tr>
+
+                                    <tr t-if="not data['lines'] and not (o.date_from and (data['opening_debit'] or data['opening_credit']))">
+                                        <td colspan="6" class="text-center text-muted">
+                                            No entries found for this period.
+                                        </td>
+                                    </tr>
+                                </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <td/>
+                                        <td/>
+                                        <td class="pl_num" t-esc="'{:,.2f}'.format(data['total_credit'])"/>
+                                        <td/>
+                                        <td/>
+                                        <td class="pl_num" t-esc="'{:,.2f}'.format(data['total_debit'])"/>
+                                    </tr>
+                                    <tr t-if="data['closing_side']">
+                                        <td/>
+                                        <td>
+                                            <span t-esc="data['closing_side']"/>
+                                            <span> Closing Balance</span>
+                                        </td>
+                                        <td class="pl_num">
+                                            <span t-if="data['closing_side'] == 'Cr'"
+                                                  t-esc="'{:,.2f}'.format(data['closing_amount'])"/>
+                                        </td>
+                                        <td/>
+                                        <td/>
+                                        <td class="pl_num">
+                                            <span t-if="data['closing_side'] == 'Dr'"
+                                                  t-esc="'{:,.2f}'.format(data['closing_amount'])"/>
+                                        </td>
+                                    </tr>
+                                    <tr t-if="data['closing_side']">
+                                        <td/>
+                                        <td/>
+                                        <td class="pl_num" t-esc="'{:,.2f}'.format(data['grand_total'])"/>
+                                        <td/>
+                                        <td/>
+                                        <td class="pl_num" t-esc="'{:,.2f}'.format(data['grand_total'])"/>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </t>
+                </t>
+            </t>
+        </t>
+    </template>
+
+    <record id="action_report_partner_ledger" model="ir.actions.report">
+        <field name="name">Partner Ledger Extract</field>
+        <field name="model">partner.ledger.wizard</field>
+        <field name="report_type">qweb-pdf</field>
+        <field name="report_name">partner_ledger_extract.report_partner_ledger_document</field>
+        <field name="report_file">partner_ledger_extract.report_partner_ledger_document</field>
+        <field name="print_report_name">'Partner Ledger - %s' % (object.date_to)</field>
+        <field name="binding_type">report</field>
+    </record>
+
+</odoo>

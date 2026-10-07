@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Shows how a payment that belongs to a bill approval is split between the
+         Taxable and GST buckets. A ticked bill fills both in automatically; with
+         no bill ticked the whole amount is Taxable and GST is 0. The GST portion
+         can be edited while the payment is a draft; Taxable follows. -->
+    <record id="view_account_payment_form_taxable_gst_split" model="ir.ui.view">
+        <field name="name">account.payment.form.taxable.gst.split</field>
+        <field name="model">account.payment</field>
+        <field name="inherit_id" ref="account.view_account_payment_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//label[@for='amount']" position="before">
+                <field name="approval_id" invisible="1"/>
+                <field name="taxable_paid_amount" string="Taxable Portion" readonly="1" force_save="1"
+                       invisible="not approval_id or payment_type != 'outbound'"/>
+                <field name="gst_paid_amount" string="GST Portion" readonly="state != 'draft'"
+                       invisible="not approval_id or payment_type != 'outbound'"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

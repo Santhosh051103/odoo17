@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Runs on every install AND every -u upgrade (no noupdate="1" here),
+         unlike post_init_hook which only fires on fresh install.
+         Re-assigns admin + peter@ekara.global to the delete-rights group
+         each time, so it self-heals if a login changes or the group
+         membership is ever accidentally cleared. -->
+    <function model="res.groups" name="action_assign_bill_approval_delete_users">
+        <value eval="[ref('bill_approval_flow_2.group_bill_approval_delete')]"/>
+    </function>
+</odoo>

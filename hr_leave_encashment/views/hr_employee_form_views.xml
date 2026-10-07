@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!--
+        Adds an "Encashment" button to the Employee form's header row,
+        alongside your existing Launch Plan / Signature Request /
+        Send Appointment Letter / Start Probation buttons.
+
+        This targets the generic //header element so it should slot in
+        regardless of which module (employee_stages / hr_employee_extended
+        etc.) last modified that header. If your header buttons instead
+        live inside a specific <div> rather than directly under <header>,
+        adjust the xpath expr below to match (e.g.
+        "//div[hasclass('oe_button_box')]" or a specific button's own
+        xpath with position="after").
+    -->
+    <record id="view_employee_form_inherit_encashment" model="ir.ui.view">
+        <field name="name">hr.employee.form.inherit.encashment</field>
+        <field name="model">hr.employee</field>
+        <field name="inherit_id" ref="hr.view_employee_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//header" position="inside">
+                <button name="action_open_leave_encashment"
+                        type="object"
+                        string="Encashment"
+                        class="btn-secondary"
+                        invisible="not active"/>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

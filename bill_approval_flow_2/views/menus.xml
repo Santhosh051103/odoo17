@@ -2,7 +2,8 @@
 <odoo>
     <menuitem id="menu_bill_root"
               name="Bill Approval"
-              sequence="10"/>
+          web_icon="bill_approval_flow_2,static/description/icon.png"
+          sequence="10"/>
 
     <menuitem id="menu_bill_approval"
               name="Bill Approvals"

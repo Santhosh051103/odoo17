@@ -31,6 +31,16 @@
         <field name="category_id" ref="module_bill_approval_flow"/>
     </record>
 
+    <!-- Delete-rights group: restricted to Peter and admin only.
+         Membership is (re)assigned by data/assign_delete_group.xml on
+         every install/upgrade. This group is also added to
+         rule_bill_approval_all_access below, so members can delete ANY
+         bill.approval record, not just ones they personally created. -->
+    <record id="group_bill_approval_delete" model="res.groups">
+        <field name="name">Bill Approval - Delete Rights</field>
+        <field name="category_id" ref="module_bill_approval_flow"/>
+    </record>
+
     <record id="rule_bill_approval_own_records" model="ir.rule">
     <field name="name">Bill Approval - Own Records Only</field>
     <field name="model_id" ref="model_bill_approval"/>
@@ -44,7 +54,8 @@
         (4, ref('bill_approval_flow_2.group_bill_approver_l1')),
         (4, ref('bill_approval_flow_2.group_bill_approver_l2')),
         (4, ref('bill_approval_flow_2.group_bill_approver_l3')),
-        (4, ref('bill_approval_flow_2.group_create_entry'))
+        (4, ref('bill_approval_flow_2.group_create_entry')),
+        (4, ref('bill_approval_flow_2.group_bill_approval_delete'))
     ]"/>
     <field name="domain_force">[(1,'=',1)]</field>
 </record>

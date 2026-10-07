@@ -44,7 +44,7 @@ class BillApprovalWizard(models.TransientModel):
     @api.onchange('bill_id')
     def _onchange_bill(self):
         if self.bill_id:
-            self.amount     = self.bill_id.total_value
+            self.amount     = self.bill_id.total_payable
             self.partner_id = self.bill_id.supplier_name
             self.account_id = self.bill_id.expense_head
 

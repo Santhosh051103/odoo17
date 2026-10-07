@@ -3,3 +3,4 @@ access_bill_approval_user,bill.approval user,model_bill_approval,group_see_own_r
 access_bill_approval_step_log,bill.approval.step.log,model_bill_approval_step_log,group_see_own_record,1,1,1,0
 access_bill_approval_wizard,bill.approval.wizard,model_bill_approval_wizard,group_see_own_record,1,1,1,1
 access_bill_approval_document,bill.approval.document,model_bill_approval_document,group_see_own_record,1,1,1,1
+access_bill_approval_delete,bill.approval delete rights,model_bill_approval,group_bill_approval_delete,1,0,0,1

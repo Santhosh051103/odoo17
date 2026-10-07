@@ -14,6 +14,7 @@
                        invisible="not is_document_validity_management" readonly="is_done"/>
                 <field name="status" invisible="not is_document_validity_management"/>
                 <field name="document_reminder" invisible="not is_document_validity_management" readonly="is_done"/>
+                <field name="document_reminder2" invisible="not is_document_validity_management" readonly="is_done"/>
             </field>
         </field>
     </record>
