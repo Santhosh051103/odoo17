@@ -57,7 +57,7 @@ Hi,
 <br/> <br/>
 Please review my request.<br/>
 Click
-<a target="__blank__" href="{record_url}">
+<a target="_blank" href="{record_url}">
 {record.display_name}
 </a> to view more !
 <br/> <br/>
